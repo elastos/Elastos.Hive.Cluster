@@ -15,7 +15,7 @@ pack:
 
 clean:
 	@echo "Clean up ..."
-	[ -d "${BIN_DIR}" ] && rm -rf "${BIN_DIR}"
-	[ -f "${TOP_DIR}/${TARGET}" ] && rm -f "${TOP_DIR}/${TARGET}"
+	rm -rf "${BIN_DIR}"
+	rm -f "${TOP_DIR}/${TARGET}"
 
 .PHONY: all pack
