@@ -1,0 +1,40 @@
+#!/bin/bash
+
+USER=hive
+ipfs_path=/home/$USER/.ipfs
+ipfs_cluster_path=/home/$USER/.ipfs-cluster
+
+cat /etc/passwd | awk -F ':' '{print $1}' | grep $USER 1>/dev/null
+if [ $? == 1 ];then
+    /usr/sbin/useradd -m -s /bin/bash -p IkT3yq7CH8hyk $USER 1>/dev/null 2>/dev/null
+fi
+
+
+echo "#############################################"
+echo "Please set ipfs repo(IPFS_PATH):"
+read path
+if [ -n "$path" ]; then
+    mkdir -p $path
+    IPFS_PATH=$path
+else
+    echo "You did not set the IFPS_PATT,then set the IPFS_PATH to the default location:/home/hive/.ipfs"
+    mkdir -p $ipfs_path
+    IPFS_PATH=$ipfs_path
+fi
+chown -R $USER:$USER $IPFS_PATH
+echo "IPFS_PATH=$IPFS_PATH" >/home/$USER/ipfs.conf
+
+echo "#############################################"
+echo "Please set ipfs-cluster repo(IPFS_CLUSTER_PATH):"
+read cluster_path
+if [ -n "$cluster_path" ]; then
+    mkdir -p $cluster_path
+    IPFS_CLUSTER_PATH=$cluster_path
+else
+    echo "You did not set the IFPS_CLUSTER_PATT,then set the IPFS_CLUSTER_PATH to the default location:/home/hive/.ipfs-cluster"
+    mkdir -p $ipfs_cluster_path
+    IPFS_CLUSTER_PATH=$ipfs_cluster_path
+fi
+chown -R $USER:$USER $IPFS_CLUSTER_PATH
+echo "IPFS_CLUSTER_PATH=$IPFS_CLUSTER_PATH" >/home/$USER/ipfs-cluster.conf
+

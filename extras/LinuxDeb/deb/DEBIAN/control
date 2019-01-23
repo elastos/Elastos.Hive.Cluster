@@ -1,0 +1,11 @@
+Package: hive-cluster
+Version: 0.1.2-alpha
+Section: utils
+Priority: optional
+Depends:
+Suggests:
+Architecture: amd64
+Installed-Size: 109169734
+Maintainer: wanlei@storswift.com
+Provides: StorSwift
+Description: Hive runtime and Hive Cluster package for Elastos.

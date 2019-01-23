@@ -1,0 +1,15 @@
+[Unit]
+Description=Elastos Hive IPFS Daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=hive
+Group=hive
+
+Type=forking
+ExecStart=/home/hive/ipfs.sh
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
