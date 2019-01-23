@@ -13,7 +13,7 @@ The typical IPFS peer is a resource hunger program. If you install IPFS daemon t
 
 The project distils from the IPFS Cluster, but it will have many differences with the IPFS Cluster.
 
-Elastos Hive Cluster maintains a big IPFS pinset for sharing. It can serve numerous virtual IPFS peers with only one IPFS peer instance running.
+Elastos Hive Cluster maintains a big IPFS pinset for sharing. It can serve numerous virtual IPFS peers with only one IPFS peer instance running.
 
 Hive Cluster is not only a pinset manager but also a backend for multiple IPFS clients.
 
@@ -111,7 +111,7 @@ Note that when the ipfs daemon is running locally on its default ports, the buil
 
 #### Building Debian package
 
-For Linux Debian based systems. This project can generate a deb package for to distribute conveniently.
+For Linux Debian based systems. This project can generate a deb package for to distribute conveniently.
 
 Please make sure that the IPFS and IPFS-Cluster projects were built and 
 the binraries (ipfs, ipfs-cluster-service, ipfs-cluster-ctl) had been generated under the directory `$GOPATH/bin`.
