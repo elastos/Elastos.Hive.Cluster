@@ -1,0 +1,18 @@
+#!/bin/bash
+
+USER=hive
+pkill ipfs
+ls /home/$USER/
+su - $USER -c "export `cat /home/$USER/ipfs.conf`;/usr/local/bin/ipfs init"
+sleep 2
+su - $USER -c "export `cat /home/$USER/ipfs-cluster.conf`;/usr/local/bin/ipfs-cluster-service init"
+sleep 2
+
+path=`cat /home/$USER/ipfs-cluster.conf | awk -F '=' '{print $2}'`
+sed -i 's#127.0.0.1/tcp/909#0.0.0.0/tcp/909#g' $path/service.json
+
+systemctl enable ipfs
+systemctl enable ipfs-cluster
+systemctl start ipfs
+systemctl start ipfs-cluster
+

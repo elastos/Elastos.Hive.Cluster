@@ -1,0 +1,9 @@
+#!/bin/bash
+
+pkill ipfs
+rm /home/hive/ipfs.conf -rf
+rm /home/hive/ipfs-cluster.conf -rf
+rm /etc/systemd/system/multi-user.target.wants/ipfs* -f
+sed -i '/hive/d' /etc/passwd
+sed -i '/hive/d' /etc/group
+
