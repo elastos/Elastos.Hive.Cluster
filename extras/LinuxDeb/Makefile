@@ -14,8 +14,7 @@ pack:
 	@dpkg-deb --build ${TOP_DIR}/deb 		"${TOP_DIR}/${TARGET}"
 
 clean:
-	@echo "Clean up ..."
-	rm -rf "${BIN_DIR}"
-	rm -f "${TOP_DIR}/${TARGET}"
+	@rm -rf "${BIN_DIR}"
+	@rm -f "${TOP_DIR}/${TARGET}"
 
 .PHONY: all pack

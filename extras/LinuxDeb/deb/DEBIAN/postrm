@@ -1,9 +1,8 @@
 #!/bin/bash
 
-pkill ipfs
-rm /home/hive/ipfs.conf -rf
-rm /home/hive/ipfs-cluster.conf -rf
-rm /etc/systemd/system/multi-user.target.wants/ipfs* -f
+systemctl stop ipfs
+systemctl stop ipfs-cluster
+find /etc/systemd/system -type f -name "ipfs.service" -o -name "ipfs-cluster.service" -exec rm -f {} \;
+systemctl daemon-reload
 sed -i '/hive/d' /etc/passwd
 sed -i '/hive/d' /etc/group
-
