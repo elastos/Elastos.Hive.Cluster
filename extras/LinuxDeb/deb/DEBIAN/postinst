@@ -1,18 +1,41 @@
 #!/bin/bash
 
 USER=hive
-pkill ipfs
-ls /home/$USER/
-su - $USER -c "export `cat /home/$USER/ipfs.conf`;/usr/local/bin/ipfs init"
-sleep 2
-su - $USER -c "export `cat /home/$USER/ipfs-cluster.conf`;/usr/local/bin/ipfs-cluster-service init"
+
+export IPFS_PATH=/var/lib/hive/ipfs
+export IPFS_CLUSTER_PATH=/var/lib/hive/ipfs-cluster
+
+NOW=$(date +%Y%m%d_%H%M)
+
+chown --reference=/usr/bin /usr/local/bin/ipfs
+chown --reference=/usr/bin /usr/local/bin/ipfs-cluster-service
+chown --reference=/usr/bin /usr/local/bin/ipfs-cluster-ctl
+
+if [ -d ${IPFS_PATH} ]; then
+	echo "Move previous ipfs repo to ${IPFS_PATH}.${NOW}."
+	mv ${IPFS_PATH}{,.${NOW}}
+else
+	mkdir -p ${IPFS_PATH}
+fi
+
+/usr/local/bin/ipfs init
 sleep 2
 
-path=`cat /home/$USER/ipfs-cluster.conf | awk -F '=' '{print $2}'`
-sed -i 's#127.0.0.1/tcp/909#0.0.0.0/tcp/909#g' $path/service.json
+if [ -d ${IPFS_CLUSTER_PATH} ]; then
+	echo "Move previous ipfs-cluster configuration to ${IPFS_CLUSTER_PATH}.${NOW}."
+	mv ${IPFS_CLUSTER_PATH}{,.${NOW}}
+else
+	mkdir -p ${IPFS_CLUSTER_PATH}
+fi
+
+/usr/local/bin/ipfs-cluster-service init
+sleep 2
+
+sed -i 's#127.0.0.1/tcp/9094#0.0.0.0/tcp/9094#g; s#127.0.0.1/tcp/9095#0.0.0.0/tcp/9095#g;' ${IPFS_CLUSTER_PATH}/service.json
+
+chown -R ${USER}:${USER} /var/lib/hive
 
 systemctl enable ipfs
 systemctl enable ipfs-cluster
 systemctl start ipfs
 systemctl start ipfs-cluster
-
