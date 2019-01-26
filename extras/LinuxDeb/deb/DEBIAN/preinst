@@ -5,18 +5,26 @@ config_path=/etc/hive
 ipfs_path=/var/lib/hive/ipfs
 ipfs_cluster_path=/var/lib/hive/ipfs-cluster
 
-cat /etc/passwd | awk -F ':' '{print $1}' | grep -q $USER 1>/dev/null
-if [ $? -ne 0 ]; then
-    /usr/sbin/useradd -d /var/lib/hive -s /usr/sbin/nologin $USER 1>/dev/null 2>/dev/null
-fi
+NOW=$(date +%Y%m%d_%H%M)
 
-[ -d ${config_path} ] || mkdir -p ${config_path}
-[ -f ${config_path}/hive.conf ] && mv ${config_path}/hive.conf{,.old}
+if [ "$1" = "install" ]; then
+	cat /etc/passwd | awk -F ':' '{print $1}' | grep -q $USER 1>/dev/null
+	if [ $? -ne 0 ]; then
+	    /usr/sbin/useradd -d /var/lib/hive -s /usr/sbin/nologin $USER 1>/dev/null 2>/dev/null
+	fi
 
-echo "Set the IPFS_PATH to the location: ${ipfs_path}"
-echo "Set the IPFS_CLUSTER_PATH to the location: ${ipfs_cluster_path}"
+	[ -d ${config_path} ] || mkdir -p ${config_path}
+	[ -f ${config_path}/hive.conf ] && mv ${config_path}/hive.conf{,.old}
 
-cat << EOF > ${config_path}/hive.conf
+	echo "Set the IPFS_PATH to the location: ${ipfs_path}"
+	echo "Set the IPFS_CLUSTER_PATH to the location: ${ipfs_cluster_path}"
+
+	cat << EOF > ${config_path}/hive.conf
 IPFS_PATH=${ipfs_path}
 IPFS_CLUSTER_PATH=${ipfs_cluster_path}
 EOF
+fi
+
+if [ "$1" = "upgrade" ]; then
+	echo "upgrade configurations ..."
+fi
