@@ -1,8 +1,14 @@
 #!/bin/bash
 
-systemctl stop ipfs
-systemctl stop ipfs-cluster
-find /etc/systemd/system -type f -name "ipfs.service" -o -name "ipfs-cluster.service" -exec rm -f {} \;
-systemctl daemon-reload
-sed -i '/hive/d' /etc/passwd
-sed -i '/hive/d' /etc/group
+set -e
+
+if [ "$1" = "upgrade" -o "$1" = "remove" ]; then
+	echo "clean temporary files ..."
+fi
+
+if [ "$1" = "purge" ]; then
+	find /etc/systemd/system -type f -name "ipfs.service" -o -name "ipfs-cluster.service" -exec rm -f {} \;
+	rm -rf /etc/hive/hive.conf
+	sed -i '/hive/d' /etc/passwd
+	sed -i '/hive/d' /etc/group
+fi

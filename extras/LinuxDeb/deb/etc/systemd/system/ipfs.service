@@ -8,7 +8,7 @@ User=hive
 Group=hive
 EnvironmentFile=/etc/hive/hive.conf
 Type=simple
-ExecStart=/usr/local/bin/ipfs daemon
+ExecStart=/usr/bin/ipfs daemon
 Restart=always
 
 [Install]

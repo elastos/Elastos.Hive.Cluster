@@ -1,41 +1,122 @@
 #!/bin/bash
 
 USER=hive
-
-export IPFS_PATH=/var/lib/hive/ipfs
-export IPFS_CLUSTER_PATH=/var/lib/hive/ipfs-cluster
+config_path=/etc/hive
+ipfs_path=/var/lib/hive/ipfs
+ipfs_cluster_path=/var/lib/hive/ipfs-cluster
 
 NOW=$(date +%Y%m%d_%H%M)
 
-chown --reference=/usr/bin /usr/local/bin/ipfs
-chown --reference=/usr/bin /usr/local/bin/ipfs-cluster-service
-chown --reference=/usr/bin /usr/local/bin/ipfs-cluster-ctl
-
-if [ -d ${IPFS_PATH} ]; then
-	echo "Move previous ipfs repo to ${IPFS_PATH}.${NOW}."
-	mv ${IPFS_PATH}{,.${NOW}}
-else
-	mkdir -p ${IPFS_PATH}
+if [ -f ${config_path}/hive.conf ]; then
+	ipfs_path=$(grep IPFS_PATH ${config_path}/hive.conf | awk -F '=' '{print $2}')
+	ipfs_cluster_path=$(grep IPFS_CLUSTER_PATH ${config_path}/hive.conf | awk -F '=' '{print $2}')
 fi
 
-/usr/local/bin/ipfs init
-sleep 2
+if [ "$1" = "configure" ]; then
+	# Initialize ipfs and ipfs-cluster repo
 
-if [ -d ${IPFS_CLUSTER_PATH} ]; then
-	echo "Move previous ipfs-cluster configuration to ${IPFS_CLUSTER_PATH}.${NOW}."
-	mv ${IPFS_CLUSTER_PATH}{,.${NOW}}
-else
-	mkdir -p ${IPFS_CLUSTER_PATH}
+	export IPFS_PATH=${ipfs_path}
+	export IPFS_CLUSTER_PATH=${ipfs_cluster_path}
+
+	if [ -d ${IPFS_PATH} ]; then
+		echo "using previous ipfs repo: ${IPFS_PATH} "
+	else
+		mkdir -p ${IPFS_PATH}
+		/usr/bin/ipfs init
+		sleep 2
+	fi
+
+	if [ -d ${IPFS_CLUSTER_PATH} ]; then
+		echo "using previous ipfs-cluster configuration: ${IPFS_CLUSTER_PATH}"
+	else
+		mkdir -p ${IPFS_CLUSTER_PATH}
+		/usr/bin/ipfs-cluster-service init
+		sleep 2
+
+		MASTER=
+		while [ "$MASTER" != "0" -a "$MASTER" != "1" ] ; do
+			read -p "Please choose a hive-cluster type to configure: [0: Master; 1: Slave] " MASTER
+			case $MASTER in
+			0)
+			    echo "to install hive master ...";;
+			1)
+			    echo "to install hive slave ...";;
+			*)
+			    echo "error choice";;
+			esac
+		done
+
+		if [ "$MASTER" == "0" ]; then
+			echo "set up ipfs-cluster to master ..."
+			echo "*********************       Important Notice       *********************"
+			echo "The secret is saved as a json key/value in '${IPFS_CLUSTER_PATH}/service.json' file."
+			SECRET=`cat  ${IPFS_CLUSTER_PATH}/service.json | grep secret | awk -F ':' '{print $2}' | grep -o '\".*\"'`
+			echo "The cluster secret is: $SECRET"
+			echo "Please record the above secret and save it to a safe place."
+			echo "*********************             END              *********************"
+			echo ""
+		fi
+
+		if [ "$MASTER" == "1" ]; then
+			echo "*********************       Important Notice       *********************"
+			echo "The folllowing steps need to input hive-cluster master 'address' and 'secret'."
+			echo "1. The address is a combination of '<transport address>/ipfs/<hash-of-public-key>'."
+			echo "   For example: /ip4/222.222.222.222/tcp/9096/ipfs/QmNTD6ZbhdaoDmjQqGJrp8dKEPvtBQGzRxwWHNcmvNYsbK"
+			echo "   The addresses can be gotten by command 'ipfs-cluster-ct id'."
+			echo "2. The secret is a string generated in the cluster master 'service.json' file."
+			echo "   The location of secret should be saved in '${IPFS_CLUSTER_PATH}/service.json' file in the master host."
+			echo "*********************             END              *********************"
+			echo ""
+			echo "Please make sure that the master cluster is alive and reachable now."
+
+			read -p "Please input the hive-cluster master 'address': " BOOTSTRAP
+			read -p "Please input the hive-cluster master 'secret': " SECRET
+
+			PID=
+			trap 'kill $PID > /dev/null 2>&1' SIGUSR1 SIGKILL SIGTERM SIGINT
+
+			echo "try to set up ipfs-cluster to slave ... (Ctrl-c to stop)"
+			sed s/\"secret\":\ \"\.*\"/\"secret\":\ \"$SECRET\"/g -i ${IPFS_CLUSTER_PATH}/service.json
+			output=`tempfile`
+			/usr/bin/ipfs-cluster-service daemon --bootstrap ${BOOTSTRAP} > $output 2>&1 &
+			PID=$!
+			OK=1
+			kill -0 $PID
+			while [[ $? -eq 0 ]]; do
+				sleep 1
+				echo -n "."
+
+				grep -q 'IPFS Cluster is READY' $output
+				if [ $? -eq 0 ] ; then
+					kill $PID > /dev/null 2>&1
+					OK=0
+				fi
+				kill -0 $PID > /dev/null 2>&1
+			done
+			echo  "Stop!"
+
+			if [ $OK -eq 0 ] ; then
+				echo "Congratulations! It seems good to set hive-cluster slave."
+			else
+				echo "Failure to set hive-cluster slave. Full log is below:"
+				echo "===================     HIVE LOG     ===================="
+				cat $output
+				echo ""
+				echo "==================  End of HIVE LOG  ===================="
+				rm -rf ${IPFS_CLUSTER_PATH}
+
+				exit 1
+			fi
+
+			rm -rf $output
+		fi
+
+		sed -i 's#127.0.0.1/tcp/9094#0.0.0.0/tcp/9094#g; s#127.0.0.1/tcp/9095#0.0.0.0/tcp/9095#g;' ${IPFS_CLUSTER_PATH}/service.json
+		chown -R ${USER}:${USER} /var/lib/hive
+	fi
+
+	systemctl enable ipfs
+	systemctl enable ipfs-cluster
+	systemctl start ipfs
+	systemctl start ipfs-cluster
 fi
-
-/usr/local/bin/ipfs-cluster-service init
-sleep 2
-
-sed -i 's#127.0.0.1/tcp/9094#0.0.0.0/tcp/9094#g; s#127.0.0.1/tcp/9095#0.0.0.0/tcp/9095#g;' ${IPFS_CLUSTER_PATH}/service.json
-
-chown -R ${USER}:${USER} /var/lib/hive
-
-systemctl enable ipfs
-systemctl enable ipfs-cluster
-systemctl start ipfs
-systemctl start ipfs-cluster
