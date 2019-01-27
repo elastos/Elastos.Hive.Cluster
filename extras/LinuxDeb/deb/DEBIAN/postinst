@@ -46,14 +46,36 @@ if [ "$1" = "configure" ]; then
 			esac
 		done
 
+		if [ "$MASTER" == "0" ]; then
+			echo "set up ipfs-cluster to master ..."
+			echo "*********************       Important Notice       *********************"
+			echo "The secret is saved as a json key/value in '${IPFS_CLUSTER_PATH}/service.json' file."
+			SECRET=`cat  ${IPFS_CLUSTER_PATH}/service.json | grep secret | awk -F ':' '{print $2}' | grep -o '\".*\"'`
+			echo "The cluster secret is: $SECRET"
+			echo "Please record the above secret and save it to a safe place."
+			echo "*********************             END              *********************"
+			echo ""
+		fi
+
 		if [ "$MASTER" == "1" ]; then
+			echo "*********************       Important Notice       *********************"
+			echo "The folllowing steps need to input hive-cluster master 'address' and 'secret'."
+			echo "1. The address is a combination of '<transport address>/ipfs/<hash-of-public-key>'."
+			echo "   For example: /ip4/222.222.222.222/tcp/9096/ipfs/QmNTD6ZbhdaoDmjQqGJrp8dKEPvtBQGzRxwWHNcmvNYsbK"
+			echo "   The addresses can be gotten by command 'ipfs-cluster-ct id'."
+			echo "2. The secret is a string generated in the cluster master 'service.json' file."
+			echo "   The location of secret should be saved in '${IPFS_CLUSTER_PATH}/service.json' file in the master host."
+			echo "*********************             END              *********************"
+			echo ""
+			echo "Please make sure that the master cluster is alive and reachable now."
+
 			read -p "Please input the hive-cluster master 'address': " BOOTSTRAP
 			read -p "Please input the hive-cluster master 'secret': " SECRET
 
 			PID=
 			trap 'kill $PID > /dev/null 2>&1' SIGUSR1 SIGKILL SIGTERM SIGINT
 
-			echo "try to set up ipfs-cluster-service slave ... (Ctrl-c to stop)"
+			echo "try to set up ipfs-cluster to slave ... (Ctrl-c to stop)"
 			sed s/\"secret\":\ \"\.*\"/\"secret\":\ \"$SECRET\"/g -i ${IPFS_CLUSTER_PATH}/service.json
 			output=`tempfile`
 			/usr/bin/ipfs-cluster-service daemon --bootstrap ${BOOTSTRAP} > $output 2>&1 &
@@ -74,11 +96,13 @@ if [ "$1" = "configure" ]; then
 			echo  "Stop!"
 
 			if [ $OK -eq 0 ] ; then
-				echo "It seems good to set hive-cluster slave."
+				echo "Congratulations! It seems good to set hive-cluster slave."
 			else
 				echo "Failure to set hive-cluster slave. Full log is below:"
-				echo "===================HIVE LOG===================="
+				echo "===================     HIVE LOG     ===================="
 				cat $output
+				echo ""
+				echo "==================  End of HIVE LOG  ===================="
 				rm -rf ${IPFS_CLUSTER_PATH}
 
 				exit 1
