@@ -1031,8 +1031,8 @@ type UIDSecret struct {
 	PeerID string
 }
 
-// UIDLogIn wraps node keys renaming in the Hive Cluster.
-type UIDLogIn struct {
+// UIDRenew wraps node keys renaming in the Hive Cluster.
+type UIDRenew struct {
 	UID    string
 	OldUID string
 	PeerID string

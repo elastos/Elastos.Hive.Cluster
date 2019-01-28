@@ -360,9 +360,9 @@ func (rpcapi *RPCAPI) UidNew(ctx context.Context, in string, out *api.UIDSecret)
 	return err
 }
 
-// UidLogIn runs IPFSConnector.UidLogIn().
-func (rpcapi *RPCAPI) UidLogIn(ctx context.Context, in []string, out *api.UIDLogIn) error {
-	res, err := rpcapi.c.ipfs.UidLogIn(in)
+// UidRenew runs IPFSConnector.UidRenew().
+func (rpcapi *RPCAPI) UidRenew(ctx context.Context, in []string, out *api.UIDRenew) error {
+	res, err := rpcapi.c.ipfs.UidRenew(in)
 	*out = res
 	return err
 }

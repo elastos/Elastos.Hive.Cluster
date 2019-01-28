@@ -89,8 +89,8 @@ type IPFSConnector interface {
 	BlockGet(cid.Cid) ([]byte, error)
 	// UidNew registers a uid in hive cluster
 	UidNew(name string) (api.UIDSecret, error)
-	// UidLogIn is used to change uid
-	UidLogIn([]string) (api.UIDLogIn, error)
+	// UidRenew is used to change uid
+	UidRenew([]string) (api.UIDRenew, error)
 	// UidInfo get uid Name and Id
 	UidInfo(uid string) (api.UIDSecret, error)
 	// FileGet downloads file from ipfs service

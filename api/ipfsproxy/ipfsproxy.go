@@ -94,7 +94,7 @@ type ipfsUidNewResp struct {
 	PeerID string
 }
 
-type ipfsUidLogInResp struct {
+type ipfsUidRenewResp struct {
 	OldUID string
 	UID    string
 	PeerID string
@@ -223,9 +223,9 @@ func New(cfg *Config) (*Server, error) {
 		HandlerFunc(proxy.uidNewHandler).
 		Name("UidNew")
 	hijackSubrouter.
-		Path("/uid/login").
-		HandlerFunc(proxy.uidLogInHandler).
-		Name("UidLogin")
+		Path("/uid/renew").
+		HandlerFunc(proxy.uidRenewHandler).
+		Name("UidRenew")
 	hijackSubrouter.
 		Path("/uid/info").
 		HandlerFunc(proxy.uidInfoHandler).
@@ -668,7 +668,7 @@ func (proxy *Server) uidNewHandler(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
-func (proxy *Server) uidLogInHandler(w http.ResponseWriter, r *http.Request) {
+func (proxy *Server) uidRenewHandler(w http.ResponseWriter, r *http.Request) {
 	proxy.setHeaders(w.Header(), r)
 
 	q := r.URL.Query()
@@ -686,23 +686,23 @@ func (proxy *Server) uidLogInHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	newUID := "uid-" + randName.String()
 
-	UIDLogIn := api.UIDLogIn{}
+	UIDRenew := api.UIDRenew{}
 	err = proxy.rpcClient.Call(
 		"",
 		"Cluster",
-		"UidLogIn",
+		"UidRenew",
 		[]string{oldUID, newUID},
-		&UIDLogIn,
+		&UIDRenew,
 	)
 	if err != nil {
 		ipfsErrorResponder(w, err.Error())
 		return
 	}
 
-	res := ipfsUidLogInResp{
-		UID:    UIDLogIn.UID,
-		OldUID: UIDLogIn.OldUID,
-		PeerID: UIDLogIn.PeerID,
+	res := ipfsUidRenewResp{
+		UID:    UIDRenew.UID,
+		OldUID: UIDRenew.OldUID,
+		PeerID: UIDRenew.PeerID,
 	}
 	resBytes, _ := json.Marshal(res)
 	w.WriteHeader(http.StatusOK)
