@@ -1025,6 +1025,13 @@ type IPFSRepoStat struct {
 	StorageMax uint64
 }
 
+// UIDKey wraps secret private key.
+type UIDKey struct {
+	UID  string
+	Key  []byte
+	Root string
+}
+
 // UIDSecret wraps node register keys in the Hive Cluster.
 type UIDSecret struct {
 	UID    string

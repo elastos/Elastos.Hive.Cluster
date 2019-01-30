@@ -281,6 +281,19 @@ func (rpcapi *RPCAPI) TrackerRecover(ctx context.Context, in api.PinSerial, out 
 	return err
 }
 
+// FindKey finds user key from IFPS keystore
+func (rpcapi *RPCAPI) FindKey(ctx context.Context, in string, out *api.UIDKey) error {
+	key, err := rpcapi.c.FindKey(in)
+	*out = key
+	return err
+}
+
+// SyncKey runs Cluster.SyncKey().
+func (rpcapi *RPCAPI) SyncKey(ctx context.Context, in string, out *struct{}) error {
+	err := rpcapi.c.SyncKey(in)
+	return err
+}
+
 /*
    IPFS Connector component methods
 */
