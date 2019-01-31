@@ -5,6 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"os"
+	"os/user"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -12,6 +15,7 @@ import (
 	"github.com/elastos/Elastos.NET.Hive.Cluster/adder/local"
 	"github.com/elastos/Elastos.NET.Hive.Cluster/adder/sharding"
 	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
+	"github.com/elastos/Elastos.NET.Hive.Cluster/keystore"
 	"github.com/elastos/Elastos.NET.Hive.Cluster/pstoremgr"
 	"github.com/elastos/Elastos.NET.Hive.Cluster/rpcutil"
 	"github.com/elastos/Elastos.NET.Hive.Cluster/state"
@@ -24,6 +28,8 @@ import (
 	peer "github.com/libp2p/go-libp2p-peer"
 	routedhost "github.com/libp2p/go-libp2p/p2p/host/routed"
 	ma "github.com/multiformats/go-multiaddr"
+
+	crypto "github.com/libp2p/go-libp2p-crypto"
 )
 
 // ReadyTimeout specifies the time before giving up
@@ -1369,4 +1375,126 @@ func diffPeers(peers1, peers2 []peer.ID) (added, removed []peer.ID) {
 		}
 	}
 	return
+}
+
+func localKeystore() (*keystore.FSKeystore, error) {
+	ipfsHome := os.Getenv("IPFS_PATH")
+	if ipfsHome == "" {
+		home := os.Getenv("HOME")
+		if home == "" {
+			usr, err := user.Current()
+			if err != nil {
+				panic(fmt.Sprintf("cannot get current user: %s", err))
+			}
+			home = usr.HomeDir
+		}
+		ipfsHome = filepath.Join(home, ".ipfs")
+	}
+
+	ksp := filepath.Join(ipfsHome, "keystore")
+	ks, err := keystore.NewFSKeystore(ksp)
+	if err != nil {
+		panic(fmt.Sprintf("cannot get ipfs keystore: %s", err))
+	}
+
+	return ks, err
+}
+
+// FindKey finds user key from IFPS keystore
+func (c *Cluster) FindKey(uid string) (api.UIDKey, error) {
+	uidkey := api.UIDKey{}
+
+	ks, err := localKeystore()
+	if err != nil {
+		return uidkey, err
+	}
+
+	key, err := ks.Get(uid)
+	if err != nil {
+		return uidkey, err
+	}
+
+	sk, err := crypto.MarshalPrivateKey(key)
+	if err != nil {
+		return uidkey, err
+	}
+
+	stat, err := c.ipfs.FilesStat([]string{uid, ""})
+	if err != nil {
+		return uidkey, err
+	}
+
+	// clean rootfs
+	c.ipfs.FilesRm([]string{uid, "", "true"})
+
+	uidkey.UID = uid
+	uidkey.Key = sk
+	uidkey.Root = stat.Hash
+
+	return uidkey, nil
+}
+
+// SyncKey finds the Key of the member of this Cluster.
+func (c *Cluster) SyncKey(uid string) error {
+	// check local key
+	ks, err := localKeystore()
+	if err != nil {
+		return err
+	}
+
+	_, err = ks.Get(uid)
+	if err == nil {
+		return nil
+	}
+
+	// sync remote key
+	members, err := c.consensus.Peers()
+	if err != nil {
+		logger.Error(err)
+		logger.Error("an empty list of peers will be returned")
+		return nil
+	}
+	lenMembers := len(members)
+
+	peersUIDKey := make([]api.UIDKey, lenMembers, lenMembers)
+
+	ctxs, cancels := rpcutil.CtxsWithCancel(c.ctx, lenMembers)
+	defer rpcutil.MultiCancel(cancels)
+
+	errs := c.rpcClient.MultiCall(
+		ctxs,
+		members,
+		"Cluster",
+		"FindKey",
+		uid,
+		rpcutil.CopyFindKeyStructToIfaces(peersUIDKey),
+	)
+
+	for i, err := range errs {
+		if err == nil {
+			priKey, err := crypto.UnmarshalPrivateKey(peersUIDKey[i].Key)
+			if err != nil {
+				logger.Error(err)
+				return err
+			}
+
+			err = ks.Put(peersUIDKey[i].UID, priKey)
+			if err != nil {
+				logger.Error(err)
+				return err
+			}
+
+			c.ipfs.FilesRm([]string{peersUIDKey[i].UID, "", "true"})
+
+			err = c.ipfs.FilesCp([]string{peersUIDKey[i].UID, "/ipfs/" + peersUIDKey[i].Root, ""})
+			if err != nil {
+				logger.Error(err)
+				return err
+			}
+
+			return err
+		}
+	}
+
+	return fmt.Errorf("Hive error: %s does not exist.", uid)
 }

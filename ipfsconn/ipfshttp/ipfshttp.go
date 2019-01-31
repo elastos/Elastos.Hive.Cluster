@@ -719,10 +719,10 @@ func (ipfs *Connector) UidNew(name string) (api.UIDSecret, error) {
 }
 
 // log in Hive cluster and get new id
-func (ipfs *Connector) UidLogIn(l []string) (api.UIDLogIn, error) {
+func (ipfs *Connector) UidRenew(l []string) (api.UIDRenew, error) {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	secret := api.UIDLogIn{}
+	secret := api.UIDRenew{}
 	url := "key/rename?arg=" + l[0] + "&arg=" + l[1]
 	res, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
