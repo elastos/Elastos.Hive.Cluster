@@ -1419,17 +1419,13 @@ func (c *Cluster) FindKey(uid string) (api.UIDKey, error) {
 		return uidkey, err
 	}
 
-	stat, err := c.ipfs.FilesStat([]string{uid, ""})
-	if err != nil {
-		return uidkey, err
+	stat, _ := c.ipfs.FilesStat([]string{uid, "", "", "", "", ""})
+	if err == nil {
+		uidkey.Root = stat.Hash
 	}
-
-	// clean rootfs
-	c.ipfs.FilesRm([]string{uid, "", "true"})
 
 	uidkey.UID = uid
 	uidkey.Key = sk
-	uidkey.Root = stat.Hash
 
 	return uidkey, nil
 }
@@ -1471,6 +1467,10 @@ func (c *Cluster) SyncKey(uid string) error {
 	)
 
 	for i, err := range errs {
+		if err != nil {
+			logger.Info(err)
+		}
+
 		if err == nil {
 			priKey, err := crypto.UnmarshalPrivateKey(peersUIDKey[i].Key)
 			if err != nil {
@@ -1478,18 +1478,28 @@ func (c *Cluster) SyncKey(uid string) error {
 				return err
 			}
 
+			logger.Info("SyncKey  uid: " + peersUIDKey[i].UID)
+			logger.Info("SyncKey  Key: <<hidden>>")
+			logger.Info("SyncKey root: " + peersUIDKey[i].Root)
+
 			err = ks.Put(peersUIDKey[i].UID, priKey)
 			if err != nil {
 				logger.Error(err)
-				return err
 			}
 
-			c.ipfs.FilesRm([]string{peersUIDKey[i].UID, "", "true"})
-
-			err = c.ipfs.FilesCp([]string{peersUIDKey[i].UID, "/ipfs/" + peersUIDKey[i].Root, ""})
-			if err != nil {
-				logger.Error(err)
-				return err
+			if peersUIDKey[i].Root != "" {
+				c.ipfs.FilesRm([]string{peersUIDKey[i].UID, "", "true"})
+				err = c.ipfs.FilesCp([]string{peersUIDKey[i].UID, "/ipfs/" + peersUIDKey[i].Root, ""})
+				if err != nil {
+					logger.Error(err)
+					return err
+				}
+			} else {
+				err := c.ipfs.FilesMkdir([]string{peersUIDKey[i].UID, "", "true"})
+				if err != nil {
+					logger.Error(err)
+					return err
+				}
 			}
 
 			return err
@@ -1497,4 +1507,48 @@ func (c *Cluster) SyncKey(uid string) error {
 	}
 
 	return fmt.Errorf("Hive error: %s does not exist.", uid)
+}
+
+// SyncUidRenew rename the Key of the member of this Cluster.
+func (c *Cluster) SyncUidRenew(l []string) (api.UIDRenew, error) {
+	// modify local
+	uidRenew, localErr := c.ipfs.UidRenew(l)
+	if localErr != nil {
+		logger.Infof("Hive Info: %s does not exist.", l[0])
+	}
+
+	// modify peers
+	members, err := c.consensus.Peers()
+	if err != nil {
+		logger.Error(err)
+		logger.Error("an empty list of peers will be returned")
+		return api.UIDRenew{}, nil
+	}
+	lenMembers := len(members)
+
+	peersUIDRenew := make([]api.UIDRenew, lenMembers, lenMembers)
+
+	ctxs, cancels := rpcutil.CtxsWithCancel(c.ctx, lenMembers)
+	defer rpcutil.MultiCancel(cancels)
+
+	errs := c.rpcClient.MultiCall(
+		ctxs,
+		members,
+		"Cluster",
+		"UidRenew",
+		l,
+		rpcutil.CopyUIDRenewKeyStructToIfaces(peersUIDRenew),
+	)
+
+	for i, err := range errs {
+		if err != nil {
+			logger.Info(err)
+		}
+
+		if err == nil {
+			return peersUIDRenew[i], nil
+		}
+	}
+
+	return uidRenew, localErr
 }

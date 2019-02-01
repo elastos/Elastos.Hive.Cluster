@@ -294,6 +294,13 @@ func (rpcapi *RPCAPI) SyncKey(ctx context.Context, in string, out *struct{}) err
 	return err
 }
 
+// SyncUidRenew runs Cluster.SyncUidRenew().
+func (rpcapi *RPCAPI) SyncUidRenew(ctx context.Context, in []string, out *api.UIDRenew) error {
+	res, err := rpcapi.c.SyncUidRenew(in)
+	*out = res
+	return err
+}
+
 /*
    IPFS Connector component methods
 */
