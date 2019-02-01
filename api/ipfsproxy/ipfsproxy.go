@@ -692,12 +692,6 @@ func (proxy *Server) uidRenewHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := proxy.uidSpawn(oldUID)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error())
-		return
-	}
-
 	randName, err := uuid.NewV4()
 	if err != nil {
 		ipfsErrorResponder(w, err.Error())
@@ -706,13 +700,15 @@ func (proxy *Server) uidRenewHandler(w http.ResponseWriter, r *http.Request) {
 	newUID := "uid-" + randName.String()
 
 	UIDRenew := api.UIDRenew{}
-	err = proxy.rpcClient.Call(
+	err = proxy.rpcClient.CallContext(
+		proxy.ctx,
 		"",
 		"Cluster",
-		"UidRenew",
+		"SyncUidRenew",
 		[]string{oldUID, newUID},
 		&UIDRenew,
 	)
+
 	if err != nil {
 		ipfsErrorResponder(w, err.Error())
 		return

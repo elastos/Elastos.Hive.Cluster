@@ -134,6 +134,17 @@ func CopyFindKeyStructToIfaces(in []api.UIDKey) []interface{} {
 	return ifaces
 }
 
+// CopyUIDRenewKeyStructToIfaces converts an UIDRenew []byte to an empty interface
+// slice using pointers to each elements of the original slice.
+// Useful to handle gorpc.MultiCall() replies.
+func CopyUIDRenewKeyStructToIfaces(in []api.UIDRenew) []interface{} {
+	ifaces := make([]interface{}, len(in), len(in))
+	for i := range in {
+		ifaces[i] = &in[i]
+	}
+	return ifaces
+}
+
 // RPCDiscardReplies returns a []interface{} slice made from a []struct{}
 // slice of then given length. Useful for RPC methods which have no response
 // types (so they use empty structs).

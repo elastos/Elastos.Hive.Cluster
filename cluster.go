@@ -1424,9 +1424,6 @@ func (c *Cluster) FindKey(uid string) (api.UIDKey, error) {
 		uidkey.Root = stat.Hash
 	}
 
-	// clean rootfs
-	c.ipfs.FilesRm([]string{uid, "", "true"})
-
 	uidkey.UID = uid
 	uidkey.Key = sk
 
@@ -1510,4 +1507,48 @@ func (c *Cluster) SyncKey(uid string) error {
 	}
 
 	return fmt.Errorf("Hive error: %s does not exist.", uid)
+}
+
+// SyncUidRenew rename the Key of the member of this Cluster.
+func (c *Cluster) SyncUidRenew(l []string) (api.UIDRenew, error) {
+	// modify local
+	uidRenew, localErr := c.ipfs.UidRenew(l)
+	if localErr != nil {
+		logger.Infof("Hive Info: %s does not exist.", l[0])
+	}
+
+	// modify peers
+	members, err := c.consensus.Peers()
+	if err != nil {
+		logger.Error(err)
+		logger.Error("an empty list of peers will be returned")
+		return api.UIDRenew{}, nil
+	}
+	lenMembers := len(members)
+
+	peersUIDRenew := make([]api.UIDRenew, lenMembers, lenMembers)
+
+	ctxs, cancels := rpcutil.CtxsWithCancel(c.ctx, lenMembers)
+	defer rpcutil.MultiCancel(cancels)
+
+	errs := c.rpcClient.MultiCall(
+		ctxs,
+		members,
+		"Cluster",
+		"UidRenew",
+		l,
+		rpcutil.CopyUIDRenewKeyStructToIfaces(peersUIDRenew),
+	)
+
+	for i, err := range errs {
+		if err != nil {
+			logger.Info(err)
+		}
+
+		if err == nil {
+			return peersUIDRenew[i], nil
+		}
+	}
+
+	return uidRenew, localErr
 }
