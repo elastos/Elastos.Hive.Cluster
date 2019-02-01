@@ -1419,9 +1419,9 @@ func (c *Cluster) FindKey(uid string) (api.UIDKey, error) {
 		return uidkey, err
 	}
 
-	stat, err := c.ipfs.FilesStat([]string{uid, ""})
-	if err != nil {
-		return uidkey, err
+	stat, _ := c.ipfs.FilesStat([]string{uid, "", "", "", "", ""})
+	if err == nil {
+		uidkey.Root = stat.Hash
 	}
 
 	// clean rootfs
@@ -1429,7 +1429,6 @@ func (c *Cluster) FindKey(uid string) (api.UIDKey, error) {
 
 	uidkey.UID = uid
 	uidkey.Key = sk
-	uidkey.Root = stat.Hash
 
 	return uidkey, nil
 }
@@ -1471,6 +1470,10 @@ func (c *Cluster) SyncKey(uid string) error {
 	)
 
 	for i, err := range errs {
+		if err != nil {
+			logger.Info(err)
+		}
+
 		if err == nil {
 			priKey, err := crypto.UnmarshalPrivateKey(peersUIDKey[i].Key)
 			if err != nil {
@@ -1478,18 +1481,28 @@ func (c *Cluster) SyncKey(uid string) error {
 				return err
 			}
 
+			logger.Info("SyncKey  uid: " + peersUIDKey[i].UID)
+			logger.Info("SyncKey  Key: <<hidden>>")
+			logger.Info("SyncKey root: " + peersUIDKey[i].Root)
+
 			err = ks.Put(peersUIDKey[i].UID, priKey)
 			if err != nil {
 				logger.Error(err)
-				return err
 			}
 
-			c.ipfs.FilesRm([]string{peersUIDKey[i].UID, "", "true"})
-
-			err = c.ipfs.FilesCp([]string{peersUIDKey[i].UID, "/ipfs/" + peersUIDKey[i].Root, ""})
-			if err != nil {
-				logger.Error(err)
-				return err
+			if peersUIDKey[i].Root != "" {
+				c.ipfs.FilesRm([]string{peersUIDKey[i].UID, "", "true"})
+				err = c.ipfs.FilesCp([]string{peersUIDKey[i].UID, "/ipfs/" + peersUIDKey[i].Root, ""})
+				if err != nil {
+					logger.Error(err)
+					return err
+				}
+			} else {
+				err := c.ipfs.FilesMkdir([]string{peersUIDKey[i].UID, "", "true"})
+				if err != nil {
+					logger.Error(err)
+					return err
+				}
 			}
 
 			return err
