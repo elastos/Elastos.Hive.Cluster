@@ -243,6 +243,11 @@ func New(cfg *Config) (*Server, error) {
 		Path("/file/cat").
 		HandlerFunc(proxy.fileCatHandler).
 		Name("FileCat")
+	// pass throught
+	// hijackSubrouter.
+	// 	Path("/file/ls").
+	// 	HandlerFunc(proxy.fileLsHandler).
+	// 	Name("FileLs")
 
 	hijackSubrouter.
 		Path("/files/cp").

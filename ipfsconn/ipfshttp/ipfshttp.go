@@ -10,6 +10,7 @@ import (
 	"io"
 	"io/ioutil"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -815,7 +816,7 @@ func (ipfs *Connector) FileGet(fg []string) ([]byte, error) {
 func (ipfs *Connector) FilesCp(l []string) error {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/cp?arg=" + l[1] + "&arg=" + "/nodes/" + l[0] + l[2]
+	url := "files/cp?arg=" + l[1] + "&arg=" + filepath.Join("/nodes/", l[0], l[1])
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
@@ -829,7 +830,7 @@ func (ipfs *Connector) FilesCp(l []string) error {
 func (ipfs *Connector) FilesFlush(l []string) error {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/flush?arg=" + "/nodes/" + l[0] + l[1]
+	url := "files/flush?arg=" + filepath.Join("/nodes/", l[0], l[1])
 
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
@@ -844,7 +845,7 @@ func (ipfs *Connector) FilesFlush(l []string) error {
 func (ipfs *Connector) FilesLs(l []string) (api.FilesLs, error) {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/ls?arg=" + "/nodes/" + l[0] + l[1]
+	url := "files/ls?arg=" + filepath.Join("/nodes/", l[0], l[1])
 	lsrsp := api.FilesLs{}
 
 	res, err := ipfs.postCtx(ctx, url, "", nil)
@@ -866,7 +867,7 @@ func (ipfs *Connector) FilesLs(l []string) (api.FilesLs, error) {
 func (ipfs *Connector) FilesMkdir(mk []string) error {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/mkdir?arg=" + "/nodes/" + mk[0] + mk[1] + "&parents=" + mk[2]
+	url := "files/mkdir?arg=" + filepath.Join("/nodes/", mk[0], mk[1]) + "&parents=" + mk[2]
 
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
@@ -881,7 +882,7 @@ func (ipfs *Connector) FilesMkdir(mk []string) error {
 func (ipfs *Connector) FilesMv(mv []string) error {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/mv?arg=" + "/nodes/" + mv[0] + mv[1] + "&arg=" + "/nodes/" + mv[0] + mv[2]
+	url := "files/mv?arg=" + filepath.Join("/nodes/", mv[0], mv[1]) + "&arg=" + filepath.Join("/nodes/", mv[0], mv[2])
 
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
@@ -896,7 +897,7 @@ func (ipfs *Connector) FilesMv(mv []string) error {
 func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/read?arg=" + "/nodes/" + l[0] + l[1]
+	url := "files/read?arg=" + filepath.Join("/nodes/", l[0], l[1])
 	if l[2] != "" {
 		url = url + "&offset=" + l[2]
 	}
@@ -917,7 +918,7 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 func (ipfs *Connector) FilesRm(rm []string) error {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/rm?arg=" + "/nodes/" + rm[0] + rm[1] + "&recursive=" + rm[2]
+	url := "files/rm?arg=" + filepath.Join("/nodes/", rm[0], rm[1]) + "&recursive=" + rm[2]
 
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
@@ -934,7 +935,7 @@ func (ipfs *Connector) FilesStat(st []string) (api.FilesStat, error) {
 	defer cancel()
 
 	FilesStat := api.FilesStat{}
-	url := "files/stat?arg=" + "/nodes/" + st[0] + st[1]
+	url := "files/stat?arg=" + filepath.Join("/nodes/", st[0], st[1])
 
 	if st[2] != "" {
 		url = url + "&format=" + st[2]
@@ -969,7 +970,7 @@ func (ipfs *Connector) FilesWrite(fr api.FilesWrite) error {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
 
-	url := "files/write?arg=" + "/nodes/" + fr.Params[0] + fr.Params[1]
+	url := "files/write?arg=" + filepath.Join("/nodes/", fr.Params[0], fr.Params[1])
 
 	if fr.Params[2] != "" {
 		url = url + "&offset=" + fr.Params[2]
