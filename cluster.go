@@ -1438,7 +1438,7 @@ func (c *Cluster) SyncKey(uid string) error {
 		return err
 	}
 
-	_, err = ks.Get(uid)
+	_, err = ks.Has(uid)
 	if err == nil {
 		return nil
 	}
