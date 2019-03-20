@@ -783,6 +783,33 @@ func (ipfs *Connector) UidInfo(uid string) (api.UIDSecret, error) {
 	return secret, nil
 }
 
+// log in Hive cluster to recreate user home
+func (ipfs *Connector) UidLogin(params []string) error {
+	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
+	defer cancel()
+
+	uid := params[0]
+	hash := params[1]
+	if !strings.HasPrefix(hash, "/ipfs/") {
+		hash = "/ipfs/" + hash
+	}
+
+	url := "files/rm?arg=/nodes/" + uid + "&recursive=true&force=true"
+	_, err := ipfs.postCtx(ctx, url, "", nil)
+	if err != nil {
+		logger.Error(err)
+	}
+
+	url = "files/cp?arg=" + hash + "&arg=" + "/nodes/" + uid
+	_, err = ipfs.postCtx(ctx, url, "", nil)
+	if err != nil {
+		logger.Error(err)
+		return hiveError(err, uid)
+	}
+
+	return nil
+}
+
 // get file from IPFS service
 func (ipfs *Connector) FileGet(fg []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
@@ -816,7 +843,7 @@ func (ipfs *Connector) FileGet(fg []string) ([]byte, error) {
 func (ipfs *Connector) FilesCp(l []string) error {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/cp?arg=" + l[1] + "&arg=" + filepath.Join("/nodes/", l[0], l[1])
+	url := "files/cp?arg=" + l[1] + "&arg=" + filepath.Join("/nodes/", l[0], l[2])
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)

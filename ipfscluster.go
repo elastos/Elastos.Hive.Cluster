@@ -93,6 +93,8 @@ type IPFSConnector interface {
 	UidRenew([]string) (api.UIDRenew, error)
 	// UidInfo get uid Name and Id
 	UidInfo(uid string) (api.UIDSecret, error)
+	// UidLogin login server and create home directory
+	UidLogin([]string) error
 	// FileGet downloads file from ipfs service
 	FileGet(fg []string) ([]byte, error)
 	// FilesCp is used to copy file

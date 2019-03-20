@@ -230,6 +230,10 @@ func New(cfg *Config) (*Server, error) {
 		Path("/uid/info").
 		HandlerFunc(proxy.uidInfoHandler).
 		Name("UidInfo")
+	hijackSubrouter.
+		Path("/uid/login").
+		HandlerFunc(proxy.uidLoginHandler).
+		Name("UidLogin")
 
 	hijackSubrouter.
 		Path("/file/add").
@@ -763,6 +767,45 @@ func (proxy *Server) uidInfoHandler(w http.ResponseWriter, r *http.Request) {
 	resBytes, _ := json.Marshal(UIDSecret)
 	w.WriteHeader(http.StatusOK)
 	w.Write(resBytes)
+	return
+}
+
+func (proxy *Server) uidLoginHandler(w http.ResponseWriter, r *http.Request) {
+	proxy.setHeaders(w.Header(), r)
+
+	q := r.URL.Query()
+
+	uid := q.Get("uid")
+	if uid == "" {
+		ipfsErrorResponder(w, "error reading request: "+r.URL.String())
+		return
+	}
+
+	hash := q.Get("hash")
+	if hash == "" {
+		ipfsErrorResponder(w, "Missing hash : error reading request: "+r.URL.String())
+		return
+	}
+
+	err := proxy.uidSpawn(uid)
+	if err != nil {
+		ipfsErrorResponder(w, err.Error())
+		return
+	}
+
+	err = proxy.rpcClient.Call(
+		"",
+		"Cluster",
+		"UidLogin",
+		[]string{uid, hash},
+		&struct{}{},
+	)
+	if err != nil {
+		ipfsErrorResponder(w, err.Error())
+		return
+	}
+
+	w.WriteHeader(http.StatusOK)
 	return
 }
 
