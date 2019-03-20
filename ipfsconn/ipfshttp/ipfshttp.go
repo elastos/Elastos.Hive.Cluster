@@ -816,7 +816,7 @@ func (ipfs *Connector) FileGet(fg []string) ([]byte, error) {
 func (ipfs *Connector) FilesCp(l []string) error {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/cp?arg=" + l[1] + "&arg=" + filepath.Join("/nodes/", l[0], l[1])
+	url := "files/cp?arg=" + l[1] + "&arg=" + filepath.Join("/nodes/", l[0], l[2])
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
