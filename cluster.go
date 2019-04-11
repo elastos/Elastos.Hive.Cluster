@@ -1432,14 +1432,16 @@ func (c *Cluster) FindKey(uid string) (api.UIDKey, error) {
 
 // SyncKey finds the Key of the member of this Cluster.
 func (c *Cluster) SyncKey(uid string) error {
+
 	// check local key
 	ks, err := localKeystore()
 	if err != nil {
+		logger.Error(err)
 		return err
 	}
 
-	_, err = ks.Has(uid)
-	if err == nil {
+	isExist, err := ks.Has(uid)
+	if err == nil && isExist {
 		return nil
 	}
 
@@ -1478,8 +1480,8 @@ func (c *Cluster) SyncKey(uid string) error {
 				return err
 			}
 
-			logger.Info("SyncKey  uid: " + peersUIDKey[i].UID)
-			logger.Info("SyncKey  Key: <<hidden>>")
+			logger.Info("SyncKey uid: " + peersUIDKey[i].UID)
+			logger.Info("SyncKey Key: <<hidden>>")
 			logger.Info("SyncKey root: " + peersUIDKey[i].Root)
 
 			err = ks.Put(peersUIDKey[i].UID, priKey)
