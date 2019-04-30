@@ -1373,10 +1373,11 @@ func (proxy *Server) namePublishHandler(w http.ResponseWriter, r *http.Request) 
 
 	lifetime := q.Get("lifetime")
 
-	err = proxy.rpcClient.Call(
+	err = proxy.rpcClient.CallContext(
+		proxy.ctx,
 		"",
 		"Cluster",
-		"IPFSNamePublish",
+		"NamePublish", // call the cluster's NamePublish, not the IPFS
 		[]string{uid, path, lifetime},
 		&NamePublish,
 	)

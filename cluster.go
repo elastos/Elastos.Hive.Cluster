@@ -1554,3 +1554,50 @@ func (c *Cluster) SyncUidRenew(l []string) (api.UIDRenew, error) {
 
 	return uidRenew, localErr
 }
+
+// NamePublish request to publish the Key for all member of this Cluster.
+// routine: local publish -> swarm publish
+func (c *Cluster) NamePublish(np []string) (api.NamePublish, error) {
+	// try to publish from local
+	result, localErr := c.ipfs.NamePublish(np)
+	if localErr != nil {
+		logger.Infof("Cannot publish name from this host: (uid=%s, path=%s)", np[0], np[1])
+	} else {
+		return result, localErr
+	}
+
+	// try to publish from peers
+	members, err := c.consensus.Peers()
+	if err != nil {
+		logger.Error(err)
+		logger.Error("an empty list of peers will be returned")
+		return api.NamePublish{}, err
+	}
+	lenMembers := len(members)
+
+	peersNamePublish := make([]api.NamePublish, lenMembers, lenMembers)
+
+	ctxs, cancels := rpcutil.CtxsWithCancel(c.ctx, lenMembers)
+	defer rpcutil.MultiCancel(cancels)
+
+	errs := c.rpcClient.MultiCall(
+		ctxs,
+		members,
+		"Cluster",
+		"IPFSNamePublish", // call the IPFS's NamePublish
+		np,
+		rpcutil.CopyNamePublishStructToIfaces(peersNamePublish),
+	)
+
+	for i, err := range errs {
+		if err != nil {
+			logger.Info(err)
+		}
+
+		if err == nil {
+			return peersNamePublish[i], nil
+		}
+	}
+
+	return result, localErr
+}
