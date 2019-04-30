@@ -301,6 +301,13 @@ func (rpcapi *RPCAPI) SyncUidRenew(ctx context.Context, in []string, out *api.UI
 	return err
 }
 
+// NamePublish runs Cluster.NamePublish().
+func (rpcapi *RPCAPI) NamePublish(ctx context.Context, in []string, out *api.NamePublish) error {
+	res, err := rpcapi.c.NamePublish(in)
+	*out = res
+	return err
+}
+
 /*
    IPFS Connector component methods
 */
