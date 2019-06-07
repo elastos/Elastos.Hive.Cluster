@@ -146,7 +146,7 @@ $ ipfs-cluster-ctl help
 Details about ipfs cluster please refer to the docs from https://cluster.ipfs.io.
 
 Hive cluster uses HTTP interface to serve numerous clients. About HTTP API, please refer to 
-* [HTTP API](TODO)
+* [HTTP API](https://docs.ipfs.io/reference/api/http/)
 
 ## Get Started
 
