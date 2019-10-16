@@ -150,3 +150,14 @@ func CheckErrs(errs []error) error {
 	}
 	return nil
 }
+
+// CopyFindKeyStructToIfaces converts an PriKey []byte to an empty interface
+// slice using pointers to each elements of the original slice.
+// Useful to handle gorpc.MultiCall() replies.
+func CopyUIDQmHashStructToIfaces(in []api.UIDKey) []interface{} {
+	ifaces := make([]interface{}, len(in), len(in))
+	for i := range in {
+		ifaces[i] = &in[i]
+	}
+	return ifaces
+}

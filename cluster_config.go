@@ -316,6 +316,7 @@ func isRPCPolicyValid(p map[string]RPCEndpointType) error {
 			name := fmt.Sprintf("%s.%s", RPCServiceID(c), method.Name)
 			_, ok := p[name]
 			if !ok {
+				//TODO tiantian
 				return fmt.Errorf("RPCPolicy is missing the %s method", name)
 			}
 		}

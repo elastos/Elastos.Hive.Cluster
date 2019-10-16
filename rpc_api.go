@@ -616,3 +616,101 @@ func (rpcapi *PeerMonitorRPCAPI) LatestMetrics(ctx context.Context, in string, o
 	*out = rpcapi.mon.LatestMetrics(ctx, in)
 	return nil
 }
+
+
+
+// UidNew runs IPFSConnector.UidNew().
+func (rpcapi *ClusterRPCAPI) UidNew(ctx context.Context, in string, out *api.UIDSecret) error {
+	res, err := rpcapi.c.ipfs.UidNew(ctx, in)
+	*out = res
+	return err
+}
+
+
+
+// UidLogin runs IPFSConnector.UidLogin().
+func (rpcapi *ClusterRPCAPI) UidLogin(ctx context.Context, in []string, out *api.UIDKey) error {
+	uidkey := api.UIDKey{}
+	uidkey.UID = in[0]
+	uidkey.Root = in[1]
+	uidkey.PeerID = rpcapi.c.id
+
+	if uidkey.Root == "" {
+		uidkey, _ = rpcapi.c.AutoLogin(ctx, uidkey.UID)
+	}
+	err := rpcapi.c.ipfs.UidLogin(ctx, uidkey)
+	*out = uidkey
+	return err
+}
+
+// IPFSFileGet runs IPFSConnector.IPFSFileGet().
+func (rpcapi *ClusterRPCAPI) IPFSFileGet(ctx context.Context, in []string, out *[]byte) error {
+	res, err := rpcapi.c.ipfs.FileGet(in)
+	*out = res
+	return err
+}
+
+// FilesCp runs IPFSConnector.FilesCp().
+func (rpcapi *ClusterRPCAPI) IPFSFilesCp(ctx context.Context, in []string, out *struct{}) error {
+	err := rpcapi.c.ipfs.FilesCp(in)
+	return err
+}
+
+// FilesFlush runs IPFSConnector.FilesFlush().
+func (rpcapi *ClusterRPCAPI) IPFSFilesFlush(ctx context.Context, in []string, out *struct{}) error {
+	err := rpcapi.c.ipfs.FilesFlush(in)
+	return err
+}
+
+// FilesLs runs IPFSConnector.FilesLs().
+func (rpcapi *ClusterRPCAPI) IPFSFilesLs(ctx context.Context, in []string, out *api.FilesLs) error {
+	res, err := rpcapi.c.ipfs.FilesLs(in)
+	*out = res
+	return err
+}
+
+// FilesMkdir runs IPFSConnector.FilesMkdir().
+func (rpcapi *ClusterRPCAPI) IPFSFilesMkdir(ctx context.Context, in []string, out *struct{}) error {
+	err := rpcapi.c.ipfs.FilesMkdir(in)
+	return err
+}
+
+// FilesMv runs IPFSConnector.FilesMv().
+func (rpcapi *ClusterRPCAPI) IPFSFilesMv(ctx context.Context, in []string, out *struct{}) error {
+	err := rpcapi.c.ipfs.FilesMv(in)
+	return err
+}
+
+// FilesRead runs IPFSConnector.FilesRead().
+func (rpcapi *ClusterRPCAPI) IPFSFilesRead(ctx context.Context, in []string, out *[]byte) error {
+	res, err := rpcapi.c.ipfs.FilesRead(in)
+	*out = res
+	return err
+}
+
+// FilesRm runs IPFSConnector.FilesRm().
+func (rpcapi *ClusterRPCAPI) IPFSFilesRm(ctx context.Context, in []string, out *struct{}) error {
+	err := rpcapi.c.ipfs.FilesRm(in)
+	return err
+}
+
+// FilesStat runs IPFSConnector.FilesStat().
+func (rpcapi *ClusterRPCAPI) IPFSFilesStat(ctx context.Context, in []string, out *api.FilesStat) error {
+	res, err := rpcapi.c.ipfs.FilesStat(in)
+	*out = res
+	return err
+}
+
+// FilesWrite runs IPFSConnector.FilesWrite().
+func (rpcapi *ClusterRPCAPI) IPFSFilesWrite(ctx context.Context, in api.FilesWrite, out *struct{}) error {
+	err := rpcapi.c.ipfs.FilesWrite(in)
+	return err
+}
+
+// FindKey finds user key from IFPS keystore
+func (rpcapi *ClusterRPCAPI) IPFSFindQmHash(ctx context.Context, in string, out *api.UIDKey) error {
+	key, err := rpcapi.c.FindQmHash(in)
+	*out = key
+	return err
+}
+

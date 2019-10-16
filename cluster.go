@@ -1874,3 +1874,91 @@ func diffPeers(peers1, peers2 []peer.ID) (added, removed []peer.ID) {
 	}
 	return
 }
+
+// FindKey finds user key from IFPS keystore
+func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
+	uidkey := api.UIDKey{}
+	uidkey.UID = uid
+	uidkey.PeerID = c.id
+
+	stat, err := c.ipfs.FilesStat([]string{uid, "", "", "", "", ""})
+	if err == nil {
+		uidkey.Root = stat.Hash
+		uidkey.Key = stat.CumulativeSize
+	}
+
+	return uidkey, nil
+}
+
+// Get newest QmHash for uid of the member of this Cluster.
+func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error) {
+	curkey, _ := c.FindQmHash(uid);
+	logger.Info("curkey  PeerID: " + fmt.Sprintf("%s", curkey.PeerID))
+	logger.Info("curkey     uid: " + curkey.UID)
+	logger.Info("curkey    root: " + curkey.Root)
+	logger.Info("curkey     key: " + fmt.Sprintf("%d", curkey.Key))
+
+	otherUidkey := api.UIDKey{}
+	// Get newest QmHash
+	members, err := c.consensus.Peers(ctx)
+	if err != nil {
+		logger.Error(err)
+		logger.Error("an empty list of peers will be returned")
+		return curkey, nil
+	}
+	lenMembers := len(members)
+
+	peersUID := make([]api.UIDKey, lenMembers, lenMembers)
+
+	ctxs, cancels := rpcutil.CtxsWithCancel(c.ctx, lenMembers)
+	defer rpcutil.MultiCancel(cancels)
+
+	errs := c.rpcClient.MultiCall(
+		ctxs,
+		members,
+		"Cluster",
+		"IPFSFindQmHash",
+		uid,
+		rpcutil.CopyUIDQmHashStructToIfaces(peersUID),
+	)
+
+	//遍历查找最新的KEY值
+	for i, err := range errs {
+		if err != nil {
+			logger.Info(err)
+		}
+
+		if err == nil {
+			// check newest  key  比较这个文件最后的更新时间
+			if peersUID[i].Key > curkey.Key {
+				otherUidkey.UID = peersUID[i].UID
+				otherUidkey.Root = peersUID[i].Root
+				otherUidkey.Key = peersUID[i].Key
+			}
+
+			logger.Info("peersUID PeerID: " + fmt.Sprintf("%s", peersUID[i].PeerID))
+			logger.Info("peersUID    uid: " + peersUID[i].UID)
+			logger.Info("peersUID   root: " + peersUID[i].Root)
+			logger.Info("peersUID    key: " + fmt.Sprintf("%d", peersUID[i].Key))
+		}
+	}
+
+	if otherUidkey.UID != "" && otherUidkey.Root != curkey.Root {
+		if otherUidkey.Root != ""  {
+			c.ipfs.FilesRm([]string{otherUidkey.UID, "", "true"})
+			err = c.ipfs.FilesCp([]string{otherUidkey.UID, "/ipfs/" + otherUidkey.Root, ""})
+			if err != nil {
+				logger.Error(err)
+			}
+		}
+		return otherUidkey, err
+	}
+
+	//没有找到最新的UID目录，确保登录成功后有一个存在的UID目录
+	if curkey.Root == "" {
+		c.ipfs.FilesMkdir([]string{curkey.UID, "", "true"})
+	}
+
+	return curkey, err
+}
+

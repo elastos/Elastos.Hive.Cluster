@@ -34,6 +34,22 @@ var DefaultRPCPolicy = map[string]RPCEndpointType{
 	"Cluster.UnpinPath":          RPCClosed,
 	"Cluster.Version":            RPCOpen,
 
+	// Hive
+	"Cluster.IPFSFindQmHash":          RPCTrusted,
+	"Cluster.AutoLogin":               RPCTrusted,
+	"Cluster.UidNew":                  RPCTrusted,
+	"Cluster.UidLogin":                RPCTrusted,
+	"Cluster.IPFSFileGet":             RPCTrusted,
+	"Cluster.IPFSFilesCp":             RPCTrusted,
+	"Cluster.IPFSFilesFlush":          RPCTrusted,
+	"Cluster.IPFSFilesLs":             RPCTrusted,
+	"Cluster.IPFSFilesMkdir":          RPCTrusted,
+	"Cluster.IPFSFilesRead":           RPCTrusted,
+	"Cluster.IPFSFilesRm":             RPCTrusted,
+	"Cluster.IPFSFilesStat":           RPCTrusted,
+	"Cluster.IPFSFilesMv":             RPCTrusted,
+	"Cluster.IPFSFilesWrite":          RPCTrusted,
+
 	// PinTracker methods
 	"PinTracker.Recover":    RPCTrusted, // Called in broadcast from Recover()
 	"PinTracker.RecoverAll": RPCClosed,  // Broadcast in RecoverAll unimplemented

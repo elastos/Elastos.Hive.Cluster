@@ -9,6 +9,7 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -897,3 +898,47 @@ type IPFSRepoStat struct {
 	RepoSize   uint64 `codec:"r,omitempty"`
 	StorageMax uint64 `codec:"s, omitempty"`
 }
+
+// UIDKey wraps secret private key.
+type UIDKey struct {
+	UID  string
+	Key  uint64
+	Root string
+	PeerID peer.ID
+}
+
+// UIDSecret wraps node register keys in the Hive Cluster.
+type UIDSecret struct {
+	UID    string
+	PeerID string
+}
+
+// FilesLs wraps files/ls entries in the Hive Cluster.
+type FilesLs struct {
+	Entries []FileLsEntrie
+}
+
+type FileLsEntrie struct {
+	Name string
+	Type int
+	Size uint64
+	Hash string
+}
+
+type FilesStat struct {
+	Hash           string
+	Size           uint64
+	CumulativeSize uint64
+	Blocks         int
+	Type           string
+	WithLocality   bool
+	Local          bool
+	SizeLocal      uint64
+}
+
+type FilesWrite struct {
+	ContentType string
+	BodyBuf     *bytes.Buffer
+	Params      []string
+}
+
