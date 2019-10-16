@@ -12,14 +12,16 @@ import (
 	"sync"
 	"time"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api/rest/client"
-	uuid "github.com/satori/go.uuid"
+	"github.com/ipfs/ipfs-cluster/api"
+	"github.com/ipfs/ipfs-cluster/api/rest/client"
 
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
-	peer "github.com/libp2p/go-libp2p-peer"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
+
+	"contrib.go.opencensus.io/exporter/jaeger"
+	uuid "github.com/google/uuid"
 	cli "github.com/urfave/cli"
 )
 
@@ -27,7 +29,7 @@ const programName = `ipfs-cluster-ctl`
 
 // Version is the cluster-ctl tool version. It should match
 // the IPFS cluster's version
-const Version = "0.8.0"
+const Version = "0.11.0"
 
 var (
 	defaultHost          = "/ip4/127.0.0.1/tcp/9094"
@@ -39,6 +41,8 @@ var (
 )
 
 var logger = logging.Logger("cluster-ctl")
+
+var tracer *jaeger.Exporter
 
 var globalClient client.Client
 
@@ -54,11 +58,11 @@ responses in a user-readable format. The location of the IPFS
 Cluster server is assumed to be %s, but can be
 configured with the --host option. To use the secure libp2p-http
 API endpoint, use "--host" with the full cluster libp2p listener
-address (including the "/ipfs/<peerID>" part), and --secret (the
+address (including the "/p2p/<peerID>" part), and --secret (the
 32-byte cluster secret as it appears in the cluster configuration).
 
 For feedback, bug reports or any additional information, visit
-https://github.com/elastos/Elastos.NET.Hive.Cluster.
+https://github.com/ipfs/ipfs-cluster.
 `,
 	programName,
 	programName,
@@ -82,6 +86,8 @@ func checkErr(doing string, err error) {
 }
 
 func main() {
+	ctx := context.Background()
+
 	app := cli.NewApp()
 	app.Name = programName
 	app.Usage = "CLI for IPFS Cluster"
@@ -174,6 +180,21 @@ requires authorization. implies --https, which you can disable with --force-http
 
 		globalClient, err = client.NewDefaultClient(cfg)
 		checkErr("creating API client", err)
+
+		// TODO: need to figure out best way to configure tracing for ctl
+		// leaving the following as it is still useful for local debugging.
+		// tracingCfg := &observations.Config{}
+		// tracingCfg.Default()
+		// tracingCfg.EnableTracing = true
+		// tracingCfg.TracingServiceName = "cluster-ctl"
+		// tracingCfg.TracingSamplingProb = 1
+		// tracer = observations.SetupTracing(tracingCfg)
+		return nil
+	}
+	app.After = func(c *cli.Context) error {
+		// TODO: need to figure out best way to configure tracing for ctl
+		// leaving the following as it is still useful for local debugging.
+		// tracer.Flush()
 		return nil
 	}
 
@@ -187,7 +208,7 @@ This command displays information about the peer that the tool is contacting
 `,
 			Flags: []cli.Flag{},
 			Action: func(c *cli.Context) error {
-				resp, cerr := globalClient.ID()
+				resp, cerr := globalClient.ID(ctx)
 				formatResponse(c, resp, cerr)
 				return nil
 			},
@@ -206,7 +227,7 @@ This command provides a list of the ID information of all the peers in the Clust
 					Flags:     []cli.Flag{},
 					ArgsUsage: " ",
 					Action: func(c *cli.Context) error {
-						resp, cerr := globalClient.Peers()
+						resp, cerr := globalClient.Peers(ctx)
 						formatResponse(c, resp, cerr)
 						return nil
 					},
@@ -226,7 +247,7 @@ cluster peers.
 						pid := c.Args().First()
 						p, err := peer.IDB58Decode(pid)
 						checkErr("parsing peer ID", err)
-						cerr := globalClient.PeerRm(p)
+						cerr := globalClient.PeerRm(ctx, p)
 						formatResponse(c, nil, cerr)
 						return nil
 					},
@@ -254,6 +275,10 @@ ipfs add, but the result is a fully replicated CID on completion.
 If you prefer faster adding, add directly to the local IPFS and trigger a
 cluster "pin add".
 
+Optional replication-min and replication-max factors can be provided: -1 means
+"pin everywhere" and 0 means use cluster's default setting (i.e., replication
+factor set in config). Positive values indicate how many peers should pin this
+content.
 `,
 			/*
 				Cluster Add supports handling huge files and sharding the resulting DAG among
@@ -288,7 +313,7 @@ cluster "pin add".
 				},
 				cli.BoolFlag{
 					Name:  "wrap-with-directory, w",
-					Usage: "Wrap a with a directory object.",
+					Usage: "Wrap a with a directory object",
 				},
 				cli.BoolFlag{
 					Name:  "hidden, H",
@@ -310,7 +335,7 @@ cluster "pin add".
 				},
 				cli.StringFlag{
 					Name:  "hash",
-					Usage: "Hash function to use. Implies cid-version=1.",
+					Usage: "Hash function to use. Implies cid-version=1",
 					Value: defaultAddParams.HashFun,
 				},
 				cli.StringFlag{
@@ -327,6 +352,18 @@ cluster "pin add".
 					Name:  "replication-max, rmax",
 					Value: defaultAddParams.ReplicationFactorMax,
 					Usage: "Sets the maximum replication factor for pinning this file",
+				},
+				cli.StringSliceFlag{
+					Name:  "metadata",
+					Usage: "Pin metadata: key=value. Can be added multiple times",
+				},
+				cli.StringFlag{
+					Name:  "allocations, allocs",
+					Usage: "Optional comma-separated list of peer IDs",
+				},
+				cli.BoolFlag{
+					Name:  "nocopy",
+					Usage: "Add the URL using filestore. Implies raw-leaves. (experimental)",
 				},
 				// TODO: Uncomment when sharding is supported.
 				// cli.BoolFlag{
@@ -349,7 +386,7 @@ cluster "pin add".
 				shard := c.Bool("shard")
 				name := c.String("name")
 				if shard && name == "" {
-					randName, err := uuid.NewV4()
+					randName, err := uuid.NewRandom()
 					if err != nil {
 						return err
 					}
@@ -371,7 +408,11 @@ cluster "pin add".
 				p := api.DefaultAddParams()
 				p.ReplicationFactorMin = c.Int("replication-min")
 				p.ReplicationFactorMax = c.Int("replication-max")
+				p.Metadata = parseMetadata(c.StringSlice("metadata"))
 				p.Name = name
+				if c.String("allocations") != "" {
+					p.UserAllocations = api.StringsToPeers(strings.Split(c.String("allocations"), ","))
+				}
 				//p.Shard = shard
 				//p.ShardSize = c.Uint64("shard-size")
 				p.Shard = false
@@ -389,6 +430,10 @@ cluster "pin add".
 				if p.CidVersion > 0 {
 					p.RawLeaves = true
 				}
+				p.NoCopy = c.Bool("nocopy")
+				if p.NoCopy {
+					p.RawLeaves = true
+				}
 
 				out := make(chan *api.AddedOutput, 1)
 				var wg sync.WaitGroup
@@ -396,14 +441,17 @@ cluster "pin add".
 				go func() {
 					defer wg.Done()
 
-					var buffered []addedOutputQuiet
-					var lastBuf = make([]addedOutputQuiet, 1, 1)
+					var buffered []*addedOutputQuiet
+					var lastBuf *addedOutputQuiet
 					var qq = c.Bool("quieter")
 					var q = c.Bool("quiet") || qq
 					var bufferResults = c.Bool("no-stream")
 					for v := range out {
-						added := addedOutputQuiet{v, q}
-						lastBuf[0] = added
+						added := &addedOutputQuiet{
+							AddedOutput: v,
+							quiet:       q,
+						}
+						lastBuf = added
 						if bufferResults {
 							buffered = append(buffered, added)
 							continue
@@ -412,23 +460,23 @@ cluster "pin add".
 							formatResponse(c, added, nil)
 						}
 					}
-					if lastBuf[0].added == nil {
+					if lastBuf == nil || lastBuf.AddedOutput == nil {
 						return // no elements at all
 					}
 					if bufferResults { // we buffered.
 						if qq { // [last elem]
-							formatResponse(c, lastBuf, nil)
+							formatResponse(c, []*addedOutputQuiet{lastBuf}, nil)
 							return
 						}
 						// [all elems]
 						formatResponse(c, buffered, nil)
 					} else if qq { // we already printed unless Quieter
-						formatResponse(c, lastBuf[0], nil)
+						formatResponse(c, lastBuf, nil)
 						return
 					}
 				}()
 
-				cerr := globalClient.Add(paths, p, out)
+				cerr := globalClient.Add(ctx, paths, p, out)
 				wg.Wait()
 				formatResponse(c, nil, cerr)
 				return cerr
@@ -441,7 +489,7 @@ cluster "pin add".
 			Subcommands: []cli.Command{
 				{
 					Name:  "add",
-					Usage: "Cluster Pin",
+					Usage: "Pin an item in the cluster",
 					Description: `
 This command tells IPFS Cluster to start managing a CID. Depending on
 the pinning strategy, this will trigger IPFS pin requests. The CID will
@@ -451,10 +499,15 @@ When the request has succeeded, the command returns the status of the CID
 in the cluster and should be part of the list offered by "pin ls".
 
 An optional replication factor can be provided: -1 means "pin everywhere"
-and 0 means use cluster's default setting. Positive values indicate how many
-peers should pin this content.
+and 0 means use cluster's default setting (i.e., replication factor set in
+config). Positive values indicate how many peers should pin this content.
+
+An optional allocations argument can be provided, allocations should be a
+comma-separated list of peer IDs on which we want to pin. Peers in allocations
+are prioritized over automatically-determined ones, but replication factors
+would stil be respected.
 `,
-					ArgsUsage: "<CID>",
+					ArgsUsage: "<CID|Path>",
 					Flags: []cli.Flag{
 						cli.IntFlag{
 							Name:  "replication, r",
@@ -472,9 +525,17 @@ peers should pin this content.
 							Usage: "Sets the maximum replication factor for this pin",
 						},
 						cli.StringFlag{
+							Name:  "allocations, allocs",
+							Usage: "Optional comma-separated list of peer IDs",
+						},
+						cli.StringFlag{
 							Name:  "name, n",
 							Value: "",
 							Usage: "Sets a name for this pin",
+						},
+						cli.StringSliceFlag{
+							Name:  "metadata",
+							Usage: "Pin metadata: key=value. Can be added multiple times",
 						},
 						cli.BoolFlag{
 							Name:  "no-status, ns",
@@ -491,10 +552,7 @@ peers should pin this content.
 						},
 					},
 					Action: func(c *cli.Context) error {
-						cidStr := c.Args().First()
-						ci, err := cid.Decode(cidStr)
-						checkErr("parsing cid", err)
-
+						arg := c.Args().First()
 						rpl := c.Int("replication")
 						rplMin := c.Int("replication-min")
 						rplMax := c.Int("replication-max")
@@ -503,15 +561,35 @@ peers should pin this content.
 							rplMax = rpl
 						}
 
-						cerr := globalClient.Pin(ci, rplMin, rplMax, c.String("name"))
+						var userAllocs []peer.ID
+						if c.String("allocations") != "" {
+							allocs := strings.Split(c.String("allocations"), ",")
+							for i := range allocs {
+								allocs[i] = strings.TrimSpace(allocs[i])
+							}
+							userAllocs = api.StringsToPeers(allocs)
+							if len(userAllocs) != len(allocs) {
+								checkErr("decoding allocations", errors.New("some peer IDs could not be decoded"))
+							}
+						}
+
+						opts := api.PinOptions{
+							ReplicationFactorMin: rplMin,
+							ReplicationFactorMax: rplMax,
+							Name:                 c.String("name"),
+							UserAllocations:      userAllocs,
+							Metadata:             parseMetadata(c.StringSlice("metadata")),
+						}
+
+						pin, cerr := globalClient.PinPath(ctx, arg, opts)
 						if cerr != nil {
 							formatResponse(c, nil, cerr)
 							return nil
 						}
-
 						handlePinResponseFormatFlags(
+							ctx,
 							c,
-							ci,
+							pin,
 							api.TrackerStatusPinned,
 						)
 						return nil
@@ -519,7 +597,7 @@ peers should pin this content.
 				},
 				{
 					Name:  "rm",
-					Usage: "Cluster Unpin",
+					Usage: "Unpin an item from the cluster",
 					Description: `
 This command tells IPFS Cluster to no longer manage a CID. This will
 trigger unpinning operations in all the IPFS nodes holding the content.
@@ -528,7 +606,7 @@ When the request has succeeded, the command returns the status of the CID
 in the cluster. The CID should disappear from the list offered by "pin ls",
 although unpinning operations in the cluster may take longer or fail.
 `,
-					ArgsUsage: "<CID>",
+					ArgsUsage: "<CID|Path>",
 					Flags: []cli.Flag{
 						cli.BoolFlag{
 							Name:  "no-status, ns",
@@ -545,19 +623,74 @@ although unpinning operations in the cluster may take longer or fail.
 						},
 					},
 					Action: func(c *cli.Context) error {
-						cidStr := c.Args().First()
-						ci, err := cid.Decode(cidStr)
-						checkErr("parsing cid", err)
-						cerr := globalClient.Unpin(ci)
+						arg := c.Args().First()
+						pin, cerr := globalClient.UnpinPath(ctx, arg)
 						if cerr != nil {
 							formatResponse(c, nil, cerr)
 							return nil
 						}
-
 						handlePinResponseFormatFlags(
+							ctx,
 							c,
-							ci,
+							pin,
 							api.TrackerStatusUnpinned,
+						)
+						return nil
+					},
+				},
+				{
+					Name:  "update",
+					Usage: "Pin a new item based on an existing one",
+					Description: `
+This command will add a new pin to the cluster taking all the options from an
+existing one, including name. This means that the new pin will bypass the
+allocation process and will be allocated to the same peers as the existing
+one.
+
+The cluster peers will try to Pin the new item on IPFS using the "pin update"
+command. This is especially efficient when the content of two pins (their DAGs)
+are similar.
+
+Unlike the "pin update" command in the ipfs daemon, this will not unpin the
+existing item from the cluster. Please run "pin rm" for that.
+`,
+					ArgsUsage: "<existing-CID> <new-CID|Path>",
+					Flags: []cli.Flag{
+						cli.BoolFlag{
+							Name:  "no-status, ns",
+							Usage: "Prevents fetching pin status after unpinning (faster, quieter)",
+						},
+						cli.BoolFlag{
+							Name:  "wait, w",
+							Usage: "Wait for all nodes to report a status of pinned before returning",
+						},
+						cli.DurationFlag{
+							Name:  "wait-timeout, wt",
+							Value: 0,
+							Usage: "How long to --wait (in seconds), default is indefinitely",
+						},
+					},
+					Action: func(c *cli.Context) error {
+						from := c.Args().Get(0)
+						to := c.Args().Get(1)
+
+						fromCid, err := cid.Decode(from)
+						checkErr("parsing from Cid", err)
+
+						opts := api.PinOptions{
+							PinUpdate: fromCid,
+						}
+
+						pin, cerr := globalClient.PinPath(ctx, to, opts)
+						if cerr != nil {
+							formatResponse(c, nil, cerr)
+							return nil
+						}
+						handlePinResponseFormatFlags(
+							ctx,
+							c,
+							pin,
+							api.TrackerStatusPinned,
 						)
 						return nil
 					},
@@ -592,7 +725,7 @@ The filter only takes effect when listing all pins. The possible values are:
 						if cidStr != "" {
 							ci, err := cid.Decode(cidStr)
 							checkErr("parsing cid", err)
-							resp, cerr := globalClient.Allocation(ci)
+							resp, cerr := globalClient.Allocation(ctx, ci)
 							formatResponse(c, resp, cerr)
 						} else {
 							var filter api.PinType
@@ -601,7 +734,7 @@ The filter only takes effect when listing all pins. The possible values are:
 								filter |= api.PinTypeFromString(f)
 							}
 
-							resp, cerr := globalClient.Allocations(filter)
+							resp, cerr := globalClient.Allocations(ctx, filter)
 							formatResponse(c, resp, cerr)
 						}
 						return nil
@@ -642,7 +775,7 @@ separated list). The following are valid status values:
 				if cidStr != "" {
 					ci, err := cid.Decode(cidStr)
 					checkErr("parsing cid", err)
-					resp, cerr := globalClient.Status(ci, c.Bool("local"))
+					resp, cerr := globalClient.Status(ctx, ci, c.Bool("local"))
 					formatResponse(c, resp, cerr)
 				} else {
 					filterFlag := c.String("filter")
@@ -650,7 +783,7 @@ separated list). The following are valid status values:
 					if filter == api.TrackerStatusUndefined && filterFlag != "" {
 						checkErr("parsing filter flag", errors.New("invalid filter name"))
 					}
-					resp, cerr := globalClient.StatusAll(filter, c.Bool("local"))
+					resp, cerr := globalClient.StatusAll(ctx, filter, c.Bool("local"))
 					formatResponse(c, resp, cerr)
 				}
 				return nil
@@ -683,10 +816,10 @@ operations on the contacted peer. By default, all peers will sync.
 				if cidStr != "" {
 					ci, err := cid.Decode(cidStr)
 					checkErr("parsing cid", err)
-					resp, cerr := globalClient.Sync(ci, c.Bool("local"))
+					resp, cerr := globalClient.Sync(ctx, ci, c.Bool("local"))
 					formatResponse(c, resp, cerr)
 				} else {
-					resp, cerr := globalClient.SyncAll(c.Bool("local"))
+					resp, cerr := globalClient.SyncAll(ctx, c.Bool("local"))
 					formatResponse(c, resp, cerr)
 				}
 				return nil
@@ -715,10 +848,10 @@ operations on the contacted peer (as opposed to on every peer).
 				if cidStr != "" {
 					ci, err := cid.Decode(cidStr)
 					checkErr("parsing cid", err)
-					resp, cerr := globalClient.Recover(ci, c.Bool("local"))
+					resp, cerr := globalClient.Recover(ctx, ci, c.Bool("local"))
 					formatResponse(c, resp, cerr)
 				} else {
-					resp, cerr := globalClient.RecoverAll(c.Bool("local"))
+					resp, cerr := globalClient.RecoverAll(ctx, c.Bool("local"))
 					formatResponse(c, resp, cerr)
 				}
 				return nil
@@ -735,7 +868,7 @@ to check that it matches the CLI version (shown by -v).
 			ArgsUsage: " ",
 			Flags:     []cli.Flag{},
 			Action: func(c *cli.Context) error {
-				resp, cerr := globalClient.Version()
+				resp, cerr := globalClient.Version(ctx)
 				formatResponse(c, resp, cerr)
 				return nil
 			},
@@ -764,7 +897,7 @@ graph of the connections.  Output is a dot file encoding the cluster's connectio
 						},
 					},
 					Action: func(c *cli.Context) error {
-						resp, cerr := globalClient.GetConnectGraph()
+						resp, cerr := globalClient.GetConnectGraph(ctx)
 						if cerr != nil {
 							formatResponse(c, resp, cerr)
 							return nil
@@ -805,7 +938,7 @@ but usually are:
 							checkErr("", errors.New("provide a metric name"))
 						}
 
-						resp, cerr := globalClient.Metrics(metric)
+						resp, cerr := globalClient.Metrics(ctx, metric)
 						formatResponse(c, resp, cerr)
 						return nil
 					},
@@ -906,26 +1039,28 @@ func parseCredentials(userInput string) (string, string) {
 }
 
 func handlePinResponseFormatFlags(
+	ctx context.Context,
 	c *cli.Context,
-	ci cid.Cid,
+	pin *api.Pin,
 	target api.TrackerStatus,
 ) {
 
-	var status api.GlobalPinInfo
+	var status *api.GlobalPinInfo
 	var cerr error
 
 	if c.Bool("wait") {
-		status, cerr = waitFor(ci, target, c.Duration("wait-timeout"))
+		status, cerr = waitFor(pin.Cid, target, c.Duration("wait-timeout"))
 		checkErr("waiting for pin status", cerr)
 	}
 
 	if c.Bool("no-status") {
+		formatResponse(c, pin, nil)
 		return
 	}
 
-	if status.Cid == cid.Undef { // no status from "wait"
+	if status == nil { // no status from "wait"
 		time.Sleep(time.Second)
-		status, cerr = globalClient.Status(ci, false)
+		status, cerr = globalClient.Status(ctx, pin.Cid, false)
 	}
 	formatResponse(c, status, cerr)
 }
@@ -934,7 +1069,7 @@ func waitFor(
 	ci cid.Cid,
 	target api.TrackerStatus,
 	timeout time.Duration,
-) (api.GlobalPinInfo, error) {
+) (*api.GlobalPinInfo, error) {
 
 	ctx := context.Background()
 
@@ -953,3 +1088,46 @@ func waitFor(
 
 	return client.WaitFor(ctx, globalClient, fp)
 }
+
+func parseMetadata(metadata []string) map[string]string {
+	metadataMap := make(map[string]string)
+	for _, str := range metadata {
+		parts := strings.SplitN(str, "=", 2)
+		if len(parts) != 2 {
+			checkErr("parsing metadata", errors.New("metadata were not in the format key=value"))
+		}
+		metadataMap[parts[0]] = parts[1]
+	}
+
+	return metadataMap
+}
+
+// func setupTracing(config tracingConfig) {
+// 	if !config.Enable {
+// 		return
+// 	}
+
+// 	agentEndpointURI := "0.0.0.0:6831"
+// 	collectorEndpointURI := "http://0.0.0.0:14268"
+
+// 	if config.JaegerAgentEndpoint != "" {
+// 		agentEndpointURI = config.JaegerAgentEndpoint
+// 	}
+// 	if config.JaegerCollectorEndpoint != "" {
+// 		collectorEndpointURI = config.JaegerCollectorEndpoint
+// 	}
+
+// 	je, err := jaeger.NewExporter(jaeger.Options{
+// 		AgentEndpoint:     agentEndpointURI,
+// 		CollectorEndpoint: collectorEndpointURI,
+// 		ServiceName:       "ipfs-cluster-ctl",
+// 	})
+// 	if err != nil {
+// 		log.Fatalf("Failed to create the Jaeger exporter: %v", err)
+// 	}
+// 	// Register/enable the trace exporter
+// 	trace.RegisterExporter(je)
+
+// 	// For demo purposes, set the trace sampling probability to be high
+// 	trace.ApplyConfig(trace.Config{DefaultSampler: trace.ProbabilitySampler(1.0)})
+// }

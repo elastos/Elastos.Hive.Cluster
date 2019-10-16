@@ -7,16 +7,19 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/config"
+	"github.com/ipfs/ipfs-cluster/api"
+	"github.com/ipfs/ipfs-cluster/config"
+
+	peer "github.com/libp2p/go-libp2p-core/peer"
 
 	hraft "github.com/hashicorp/raft"
-	peer "github.com/libp2p/go-libp2p-peer"
+	"github.com/kelseyhightower/envconfig"
 )
 
 // ConfigKey is the default configuration key for holding this component's
 // configuration section.
 var configKey = "raft"
+var envConfigKey = "cluster_raft"
 
 // Configuration defaults
 var (
@@ -26,6 +29,7 @@ var (
 	DefaultNetworkTimeout       = 10 * time.Second
 	DefaultCommitRetryDelay     = 200 * time.Millisecond
 	DefaultBackupsRotate        = 6
+	DefaultDatastoreNamespace   = "/r" // from "/raft"
 )
 
 // Config allows to configure the Raft Consensus component for ipfs-cluster.
@@ -58,9 +62,14 @@ type Config struct {
 	// BackupsRotate specifies the maximum number of Raft's DataFolder
 	// copies that we keep as backups (renaming) after cleanup.
 	BackupsRotate int
+	// Namespace to use when writing keys to the datastore
+	DatastoreNamespace string
 
 	// A Hashicorp Raft's configuration object.
 	RaftConfig *hraft.Config
+
+	// Tracing enables propagation of contexts across binary boundaries.
+	Tracing bool
 }
 
 // ConfigJSON represents a human-friendly Config
@@ -94,6 +103,8 @@ type jsonConfig struct {
 	// BackupsRotate specifies the maximum number of Raft's DataFolder
 	// copies that we keep as backups (renaming) after cleanup.
 	BackupsRotate int `json:"backups_rotate"`
+
+	DatastoreNamespace string `json:"datastore_namespace,omitempty"`
 
 	// HeartbeatTimeout specifies the time in follower state without
 	// a leader before we attempt an election.
@@ -181,6 +192,10 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 
 	cfg.Default()
 
+	return cfg.applyJSONConfig(jcfg)
+}
+
+func (cfg *Config) applyJSONConfig(jcfg *jsonConfig) error {
 	parseDuration := func(txt string) time.Duration {
 		d, _ := time.ParseDuration(txt)
 		if txt != "" && d == 0 {
@@ -226,6 +241,12 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 
 // ToJSON returns the pretty JSON representation of a Config.
 func (cfg *Config) ToJSON() ([]byte, error) {
+	jcfg := cfg.toJSONConfig()
+
+	return config.DefaultJSONMarshal(jcfg)
+}
+
+func (cfg *Config) toJSONConfig() *jsonConfig {
 	jcfg := &jsonConfig{
 		DataFolder:           cfg.DataFolder,
 		InitPeerset:          api.PeersToStrings(cfg.InitPeerset),
@@ -243,8 +264,11 @@ func (cfg *Config) ToJSON() ([]byte, error) {
 		SnapshotThreshold:    cfg.RaftConfig.SnapshotThreshold,
 		LeaderLeaseTimeout:   cfg.RaftConfig.LeaderLeaseTimeout.String(),
 	}
-
-	return config.DefaultJSONMarshal(jcfg)
+	if cfg.DatastoreNamespace != DefaultDatastoreNamespace {
+		jcfg.DatastoreNamespace = cfg.DatastoreNamespace
+		// otherwise leave empty so it gets ommitted.
+	}
+	return jcfg
 }
 
 // Default initializes this configuration with working defaults.
@@ -256,6 +280,7 @@ func (cfg *Config) Default() error {
 	cfg.CommitRetries = DefaultCommitRetries
 	cfg.CommitRetryDelay = DefaultCommitRetryDelay
 	cfg.BackupsRotate = DefaultBackupsRotate
+	cfg.DatastoreNamespace = DefaultDatastoreNamespace
 	cfg.RaftConfig = hraft.DefaultConfig()
 
 	// These options are imposed over any Default Raft Config.
@@ -264,8 +289,21 @@ func (cfg *Config) Default() error {
 
 	// Set up logging
 	cfg.RaftConfig.LogOutput = ioutil.Discard
-	cfg.RaftConfig.Logger = raftStdLogger // see logging.go
+	cfg.RaftConfig.Logger = &hcLogToLogger{}
 	return nil
+}
+
+// ApplyEnvVars fills in any Config fields found
+// as environment variables.
+func (cfg *Config) ApplyEnvVars() error {
+	jcfg := cfg.toJSONConfig()
+
+	err := envconfig.Process(envConfigKey, jcfg)
+	if err != nil {
+		return err
+	}
+
+	return cfg.applyJSONConfig(jcfg)
 }
 
 // GetDataFolder returns the Raft data folder that we are using.

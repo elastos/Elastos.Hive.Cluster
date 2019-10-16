@@ -5,10 +5,12 @@ import (
 	"errors"
 	"time"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/config"
+	"github.com/ipfs/ipfs-cluster/config"
+	"github.com/kelseyhightower/envconfig"
 )
 
 const configKey = "disk"
+const envConfigKey = "cluster_disk"
 
 // Default values for disk Config
 const (
@@ -32,13 +34,13 @@ func (t MetricType) String() string {
 type Config struct {
 	config.Saver
 
-	MetricTTL time.Duration
-	Type      MetricType
+	MetricTTL  time.Duration
+	MetricType MetricType
 }
 
 type jsonConfig struct {
-	MetricTTL string `json:"metric_ttl"`
-	Type      string `json:"metric_type"`
+	MetricTTL  string `json:"metric_ttl"`
+	MetricType string `json:"metric_type"`
 }
 
 // ConfigKey returns a human-friendly identifier for this type of Metric.
@@ -49,8 +51,21 @@ func (cfg *Config) ConfigKey() string {
 // Default initializes this Config with sensible values.
 func (cfg *Config) Default() error {
 	cfg.MetricTTL = DefaultMetricTTL
-	cfg.Type = DefaultMetricType
+	cfg.MetricType = DefaultMetricType
 	return nil
+}
+
+// ApplyEnvVars fills in any Config fields found
+// as environment variables.
+func (cfg *Config) ApplyEnvVars() error {
+	jcfg := cfg.toJSONConfig()
+
+	err := envconfig.Process(envConfigKey, jcfg)
+	if err != nil {
+		return err
+	}
+
+	return cfg.applyJSONConfig(jcfg)
 }
 
 // Validate checks that the fields of this Config have working values,
@@ -60,7 +75,7 @@ func (cfg *Config) Validate() error {
 		return errors.New("disk.metric_ttl is invalid")
 	}
 
-	if cfg.Type.String() == "" {
+	if cfg.MetricType.String() == "" {
 		return errors.New("disk.metric_type is invalid")
 	}
 	return nil
@@ -76,14 +91,20 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 		return err
 	}
 
+	cfg.Default()
+
+	return cfg.applyJSONConfig(jcfg)
+}
+
+func (cfg *Config) applyJSONConfig(jcfg *jsonConfig) error {
 	t, _ := time.ParseDuration(jcfg.MetricTTL)
 	cfg.MetricTTL = t
 
-	switch jcfg.Type {
+	switch jcfg.MetricType {
 	case "reposize":
-		cfg.Type = MetricRepoSize
+		cfg.MetricType = MetricRepoSize
 	case "freespace":
-		cfg.Type = MetricFreeSpace
+		cfg.MetricType = MetricFreeSpace
 	default:
 		return errors.New("disk.metric_type is invalid")
 	}
@@ -94,11 +115,15 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 // ToJSON generates a JSON-formatted human-friendly representation of this
 // Config.
 func (cfg *Config) ToJSON() (raw []byte, err error) {
-	jcfg := &jsonConfig{}
-
-	jcfg.MetricTTL = cfg.MetricTTL.String()
-	jcfg.Type = cfg.Type.String()
+	jcfg := cfg.toJSONConfig()
 
 	raw, err = config.DefaultJSONMarshal(jcfg)
 	return
+}
+
+func (cfg *Config) toJSONConfig() *jsonConfig {
+	return &jsonConfig{
+		MetricTTL:  cfg.MetricTTL.String(),
+		MetricType: cfg.MetricType.String(),
+	}
 }

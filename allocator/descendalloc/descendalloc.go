@@ -5,13 +5,15 @@
 package descendalloc
 
 import (
-	"github.com/elastos/Elastos.NET.Hive.Cluster/allocator/util"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
+	"context"
+
+	"github.com/ipfs/ipfs-cluster/allocator/util"
+	"github.com/ipfs/ipfs-cluster/api"
 
 	cid "github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	rpc "github.com/libp2p/go-libp2p-gorpc"
-	peer "github.com/libp2p/go-libp2p-peer"
 )
 
 var logger = logging.Logger("descendalloc")
@@ -28,13 +30,13 @@ func NewAllocator() DescendAllocator {
 func (alloc DescendAllocator) SetClient(c *rpc.Client) {}
 
 // Shutdown does nothing in this allocator
-func (alloc DescendAllocator) Shutdown() error { return nil }
+func (alloc DescendAllocator) Shutdown(_ context.Context) error { return nil }
 
 // Allocate returns where to allocate a pin request based on metrics which
 // carry a numeric value such as "used disk". We do not pay attention to
 // the metrics of the currently allocated peers and we just sort the
 // candidates based on their metric values (largest to smallest).
-func (alloc DescendAllocator) Allocate(c cid.Cid, current, candidates, priority map[peer.ID]api.Metric) ([]peer.ID, error) {
+func (alloc DescendAllocator) Allocate(ctx context.Context, c cid.Cid, current, candidates, priority map[peer.ID]*api.Metric) ([]peer.ID, error) {
 	// sort our metrics
 	first := util.SortNumeric(priority, true)
 	last := util.SortNumeric(candidates, true)

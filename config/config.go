@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"net/http"
 	"path/filepath"
 	"sync"
 	"time"
@@ -22,6 +23,8 @@ var logger = logging.Logger("config")
 // it needs saving.
 var ConfigSaveInterval = time.Second
 
+var errSourceRedirect = errors.New("a sourced configuration cannot point to another source")
+
 // The ComponentConfig interface allows components to define configurations
 // which can be managed as part of the ipfs-cluster configuration file by the
 // Manager.
@@ -34,6 +37,8 @@ type ComponentConfig interface {
 	ToJSON() ([]byte, error)
 	// Sets default working values
 	Default() error
+	// Sets values from environment variables
+	ApplyEnvVars() error
 	// Allows this component to work under a subfolder
 	SetBaseDir(string)
 	// Checks that the configuration is valid
@@ -55,6 +60,8 @@ const (
 	Monitor
 	Allocator
 	Informer
+	Observations
+	Datastore
 	endTypes // keep this at the end
 )
 
@@ -99,6 +106,14 @@ type Manager struct {
 
 	// store originally parsed jsonConfig
 	jsonCfg *jsonConfig
+	// stores original source if any
+	Source string
+
+	sourceRedirs int // used avoid recursive source load
+
+	// map of components which has empty configuration
+	// in JSON file
+	undefinedComps map[SectionType]map[string]bool
 
 	// if a config has been loaded from disk, track the path
 	// so it can be saved to the same place.
@@ -111,9 +126,10 @@ type Manager struct {
 func NewManager() *Manager {
 	ctx, cancel := context.WithCancel(context.Background())
 	return &Manager{
-		ctx:      ctx,
-		cancel:   cancel,
-		sections: make(map[SectionType]Section),
+		ctx:            ctx,
+		cancel:         cancel,
+		undefinedComps: make(map[SectionType]map[string]bool),
+		sections:       make(map[SectionType]Section),
 	}
 
 }
@@ -165,35 +181,42 @@ func (cfg *Manager) watchSave(save <-chan struct{}) {
 // saved using json. Most configuration keys are converted into simple types
 // like strings, and key names aim to be self-explanatory for the user.
 type jsonConfig struct {
-	Cluster    *json.RawMessage `json:"cluster"`
-	Consensus  jsonSection      `json:"consensus,omitempty"`
-	API        jsonSection      `json:"api,omitempty"`
-	IPFSConn   jsonSection      `json:"ipfs_connector,omitempty"`
-	State      jsonSection      `json:"state,omitempty"`
-	PinTracker jsonSection      `json:"pin_tracker,omitempty"`
-	Monitor    jsonSection      `json:"monitor,omitempty"`
-	Allocator  jsonSection      `json:"allocator,omitempty"`
-	Informer   jsonSection      `json:"informer,omitempty"`
+	Source       string           `json:"source,omitempty"`
+	Cluster      *json.RawMessage `json:"cluster,omitempty"`
+	Consensus    jsonSection      `json:"consensus,omitempty"`
+	API          jsonSection      `json:"api,omitempty"`
+	IPFSConn     jsonSection      `json:"ipfs_connector,omitempty"`
+	State        jsonSection      `json:"state,omitempty"`
+	PinTracker   jsonSection      `json:"pin_tracker,omitempty"`
+	Monitor      jsonSection      `json:"monitor,omitempty"`
+	Allocator    jsonSection      `json:"allocator,omitempty"`
+	Informer     jsonSection      `json:"informer,omitempty"`
+	Observations jsonSection      `json:"observations,omitempty"`
+	Datastore    jsonSection      `json:"datastore,omitempty"`
 }
 
-func (jcfg *jsonConfig) getSection(i SectionType) jsonSection {
+func (jcfg *jsonConfig) getSection(i SectionType) *jsonSection {
 	switch i {
 	case Consensus:
-		return jcfg.Consensus
+		return &jcfg.Consensus
 	case API:
-		return jcfg.API
+		return &jcfg.API
 	case IPFSConn:
-		return jcfg.IPFSConn
+		return &jcfg.IPFSConn
 	case State:
-		return jcfg.State
+		return &jcfg.State
 	case PinTracker:
-		return jcfg.PinTracker
+		return &jcfg.PinTracker
 	case Monitor:
-		return jcfg.Monitor
+		return &jcfg.Monitor
 	case Allocator:
-		return jcfg.Allocator
+		return &jcfg.Allocator
 	case Informer:
-		return jcfg.Informer
+		return &jcfg.Informer
+	case Observations:
+		return &jcfg.Observations
+	case Datastore:
+		return &jcfg.Datastore
 	default:
 		return nil
 	}
@@ -221,6 +244,29 @@ func (cfg *Manager) Default() error {
 	return nil
 }
 
+// ApplyEnvVars overrides configuration fields with any values found
+// in environment variables.
+func (cfg *Manager) ApplyEnvVars() error {
+	for _, section := range cfg.sections {
+		for k, compcfg := range section {
+			logger.Debugf("applying environment variables conf for %s", k)
+			err := compcfg.ApplyEnvVars()
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	if cfg.clusterConfig != nil {
+		logger.Debugf("applying environment variables conf for cluster")
+		err := cfg.clusterConfig.ApplyEnvVars()
+		if err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 // RegisterComponent lets the Manager load and save component configurations
 func (cfg *Manager) RegisterComponent(t SectionType, ccfg ComponentConfig) {
 	cfg.wg.Add(1)
@@ -241,6 +287,11 @@ func (cfg *Manager) RegisterComponent(t SectionType, ccfg ComponentConfig) {
 	}
 
 	cfg.sections[t][ccfg.ConfigKey()] = ccfg
+
+	_, ok = cfg.undefinedComps[t]
+	if !ok {
+		cfg.undefinedComps[t] = make(map[string]bool)
+	}
 }
 
 // Validate checks that all the registered components in this
@@ -292,6 +343,46 @@ func (cfg *Manager) LoadJSONFromFile(path string) error {
 	return err
 }
 
+// LoadJSONFromHTTPSource reads a Configuration file from a URL and parses it.
+func (cfg *Manager) LoadJSONFromHTTPSource(url string) error {
+	logger.Infof("loading configuration from %s", url)
+	resp, err := http.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return err
+	}
+
+	// Avoid recursively loading remote sources
+	if cfg.sourceRedirs > 0 {
+		return errSourceRedirect
+	}
+	cfg.sourceRedirs++
+	// make sure the counter is always reset when function done
+	defer func() { cfg.sourceRedirs = 0 }()
+
+	err = cfg.LoadJSON(body)
+	if err != nil {
+		return err
+	}
+	cfg.Source = url
+	return nil
+}
+
+// LoadJSONFileAndEnv calls LoadJSONFromFile followed by ApplyEnvVars,
+// reading and parsing a Configuration file and then overriding fields
+// with any values found in environment variables.
+func (cfg *Manager) LoadJSONFileAndEnv(path string) error {
+	if err := cfg.LoadJSONFromFile(path); err != nil {
+		return err
+	}
+
+	return cfg.ApplyEnvVars()
+}
+
 // LoadJSON parses configurations for all registered components,
 // In order to work, component configurations must have been registered
 // beforehand with RegisterComponent.
@@ -306,6 +397,10 @@ func (cfg *Manager) LoadJSON(bs []byte) error {
 	}
 
 	cfg.jsonCfg = jcfg
+	// Handle remote source
+	if jcfg.Source != "" {
+		return cfg.LoadJSONFromHTTPSource(jcfg.Source)
+	}
 
 	// Load Cluster section. Needs to have been registered
 	if cfg.clusterConfig != nil && jcfg.Cluster != nil {
@@ -316,27 +411,27 @@ func (cfg *Manager) LoadJSON(bs []byte) error {
 		}
 	}
 
-	loadCompJSON := func(name string, component ComponentConfig, jsonSection jsonSection) error {
+	loadCompJSON := func(name string, component ComponentConfig, jsonSection jsonSection, t SectionType) error {
+		component.SetBaseDir(dir)
 		raw, ok := jsonSection[name]
 		if ok {
-			component.SetBaseDir(dir)
 			err := component.LoadJSON([]byte(*raw))
 			if err != nil {
 				return err
 			}
-			logger.Debugf("%s section configuration loaded", name)
+			logger.Debugf("%s component configuration loaded", name)
 		} else {
-			logger.Warningf("%s section is empty, generating default", name)
-			component.SetBaseDir(dir)
+			cfg.undefinedComps[t][name] = true
+			logger.Debugf("%s component is empty, generating default", name)
 			component.Default()
 		}
 
 		return nil
 	}
 	// Helper function to load json from each section in the json config
-	loadSectionJSON := func(section Section, jsonSection jsonSection) error {
+	loadSectionJSON := func(section Section, jsonSection jsonSection, t SectionType) error {
 		for name, component := range section {
-			err := loadCompJSON(name, component, jsonSection)
+			err := loadCompJSON(name, component, jsonSection, t)
 			if err != nil {
 				logger.Error(err)
 				return err
@@ -352,23 +447,10 @@ func (cfg *Manager) LoadJSON(bs []byte) error {
 		if t == Cluster {
 			continue
 		}
-		err := loadSectionJSON(sections[t], jcfg.getSection(t))
+		err := loadSectionJSON(sections[t], *jcfg.getSection(t), t)
 		if err != nil {
 			return err
 		}
-	}
-
-	// Should we change hardcoded "ipfsproxy" to something else
-	if _, ok := jcfg.API["ipfsproxy"]; !ok {
-		loadCompJSON("ipfshttp", sections[API]["ipfsproxy"], jcfg.IPFSConn)
-		logger.Warning(`
-The IPFS proxy functionality has been extracted as a separate component
-and now uses its own configuration section ("ipfsproxy" in the "api" section).
-
-To keep compatibility, since you did not define an "ipfsproxy" section, the
-proxy configuration is taken from the "ipfshttp" section as before, but this
-will be removed in future versions.
-`)
 	}
 	return cfg.Validate()
 }
@@ -381,8 +463,8 @@ func (cfg *Manager) SaveJSON(path string) error {
 
 	logger.Info("Saving configuration")
 
-	if path == "" {
-		path = cfg.path
+	if path != "" {
+		cfg.path = path
 	}
 
 	bs, err := cfg.ToJSON()
@@ -390,15 +472,21 @@ func (cfg *Manager) SaveJSON(path string) error {
 		return err
 	}
 
-	return ioutil.WriteFile(path, bs, 0600)
+	return ioutil.WriteFile(cfg.path, bs, 0600)
 }
 
 // ToJSON provides a JSON representation of the configuration by
 // generating JSON for all componenents registered.
 func (cfg *Manager) ToJSON() ([]byte, error) {
+	dir := filepath.Dir(cfg.path)
+
 	err := cfg.Validate()
 	if err != nil {
 		return nil, err
+	}
+
+	if cfg.Source != "" {
+		return DefaultJSONMarshal(&jsonConfig{Source: cfg.Source})
 	}
 
 	jcfg := cfg.jsonCfg
@@ -407,6 +495,7 @@ func (cfg *Manager) ToJSON() ([]byte, error) {
 	}
 
 	if cfg.clusterConfig != nil {
+		cfg.clusterConfig.SetBaseDir(dir)
 		raw, err := cfg.clusterConfig.ToJSON()
 
 		if err != nil {
@@ -421,6 +510,7 @@ func (cfg *Manager) ToJSON() ([]byte, error) {
 	// component-configurations in the latter.
 	updateJSONConfigs := func(section Section, dest *jsonSection) error {
 		for k, v := range section {
+			v.SetBaseDir(dir)
 			logger.Debugf("writing changes for %s section", k)
 			j, err := v.ToJSON()
 			if err != nil {
@@ -436,30 +526,41 @@ func (cfg *Manager) ToJSON() ([]byte, error) {
 		return nil
 	}
 
-	for k, v := range cfg.sections {
-		var err error
-		switch k {
-		case Consensus:
-			err = updateJSONConfigs(v, &jcfg.Consensus)
-		case API:
-			err = updateJSONConfigs(v, &jcfg.API)
-		case IPFSConn:
-			err = updateJSONConfigs(v, &jcfg.IPFSConn)
-		case State:
-			err = updateJSONConfigs(v, &jcfg.State)
-		case PinTracker:
-			err = updateJSONConfigs(v, &jcfg.PinTracker)
-		case Monitor:
-			err = updateJSONConfigs(v, &jcfg.Monitor)
-		case Allocator:
-			err = updateJSONConfigs(v, &jcfg.Allocator)
-		case Informer:
-			err = updateJSONConfigs(v, &jcfg.Informer)
+	for _, t := range SectionTypes() {
+		if t == Cluster {
+			continue
 		}
+		jsection := jcfg.getSection(t)
+		err := updateJSONConfigs(cfg.sections[t], jsection)
 		if err != nil {
 			return nil, err
 		}
 	}
 
 	return DefaultJSONMarshal(jcfg)
+}
+
+// IsLoadedFromJSON tells whether the given component belonging to
+// the given section type is present in the cluster JSON
+// config or not.
+func (cfg *Manager) IsLoadedFromJSON(t SectionType, name string) bool {
+	return !cfg.undefinedComps[t][name]
+}
+
+// GetClusterConfig extracts cluster config from the configuration file
+// and returns bytes of it
+func GetClusterConfig(configPath string) ([]byte, error) {
+	file, err := ioutil.ReadFile(configPath)
+	if err != nil {
+		logger.Error("error reading the configuration file: ", err)
+		return nil, err
+	}
+
+	jcfg := &jsonConfig{}
+	err = json.Unmarshal(file, jcfg)
+	if err != nil {
+		logger.Error("error parsing JSON: ", err)
+		return nil, err
+	}
+	return []byte(*jcfg.Cluster), nil
 }

@@ -20,16 +20,11 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/rpcutil"
-
 	blocks "github.com/ipfs/go-block-format"
 	cid "github.com/ipfs/go-cid"
 	cbor "github.com/ipfs/go-ipld-cbor"
 	ipld "github.com/ipfs/go-ipld-format"
 	dag "github.com/ipfs/go-merkledag"
-	rpc "github.com/libp2p/go-libp2p-gorpc"
-	peer "github.com/libp2p/go-libp2p-peer"
 	mh "github.com/multiformats/go-multihash"
 )
 
@@ -85,7 +80,7 @@ func makeDAGSimple(ctx context.Context, dagObj map[string]cid.Cid) (ipld.Node, e
 // recursively pinned to track the shard
 func makeDAG(ctx context.Context, dagObj map[string]cid.Cid) ([]ipld.Node, error) {
 	// FIXME: We have a 4MB limit on the block size enforced by bitswap:
-	// https://github.com/libp2p/go-libp2p-net/blob/master/interface.go#L20
+	// https://github.com/libp2p/go-libp2p-core/blob/master/network/network.go#L23
 
 	// No indirect node
 	if len(dagObj) <= MaxLinks {
@@ -121,36 +116,6 @@ func makeDAG(ctx context.Context, dagObj map[string]cid.Cid) ([]ipld.Node, error
 	}
 	nodes := append([]ipld.Node{indirectNode}, leafNodes...)
 	return nodes, nil
-}
-
-func putDAG(ctx context.Context, rpcC *rpc.Client, nodes []ipld.Node, dests []peer.ID) error {
-	for _, n := range nodes {
-		//logger.Debugf("The dag cbor Node Links: %+v", n.Links())
-		b := api.NodeWithMeta{
-			Cid:    n.Cid().String(), // Tests depend on this.
-			Data:   n.RawData(),
-			Format: "cbor",
-		}
-		//logger.Debugf("Here is the serialized ipld: %x", b.Data)
-
-		ctxs, cancels := rpcutil.CtxsWithCancel(ctx, len(dests))
-		defer rpcutil.MultiCancel(cancels)
-
-		logger.Debugf("DAG block put %s", n.Cid())
-		errs := rpcC.MultiCall(
-			ctxs,
-			dests,
-			"Cluster",
-			"IPFSBlockPut",
-			b,
-			rpcutil.RPCDiscardReplies(len(dests)),
-		)
-
-		if err := rpcutil.CheckErrs(errs); err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 // TODO: decide whether this is worth including. Is precision important for

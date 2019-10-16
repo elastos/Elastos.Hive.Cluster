@@ -1,4 +1,4 @@
-FROM golang:1.9-stretch AS builder
+FROM golang:1.12-stretch AS builder
 MAINTAINER Hector Sanjuan <hector@protocol.ai>
 
 # This dockerfile builds cluster and runs it along with go-ipfs.
@@ -6,7 +6,7 @@ MAINTAINER Hector Sanjuan <hector@protocol.ai>
 
 # This builder just builds the cluster binaries
 ENV GOPATH     /go
-ENV SRC_PATH   $GOPATH/src/github.com/elastos/Elastos.NET.Hive.Cluster
+ENV SRC_PATH   $GOPATH/src/github.com/ipfs/ipfs-cluster
 
 COPY . $SRC_PATH
 WORKDIR $SRC_PATH
@@ -20,8 +20,9 @@ MAINTAINER Hector Sanjuan <hector@protocol.ai>
 # built binaries on the go-ipfs-container.
 
 ENV GOPATH     /go
-ENV SRC_PATH   /go/src/github.com/elastos/Elastos.NET.Hive.Cluster
+ENV SRC_PATH   /go/src/github.com/ipfs/ipfs-cluster
 ENV IPFS_CLUSTER_PATH /data/ipfs-cluster
+ENV IPFS_CLUSTER_CONSENSUS crdt
 
 EXPOSE 9094
 EXPOSE 9095
@@ -38,4 +39,4 @@ VOLUME $IPFS_CLUSTER_PATH
 ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/start-daemons.sh"]
 
 # Defaults for ipfs-cluster-service go here
-CMD ["daemon", "--upgrade"]
+CMD ["daemon"]

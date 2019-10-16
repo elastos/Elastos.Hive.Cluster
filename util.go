@@ -4,11 +4,8 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
-
 	cid "github.com/ipfs/go-cid"
-	host "github.com/libp2p/go-libp2p-host"
-	peer "github.com/libp2p/go-libp2p-peer"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 )
 
@@ -19,14 +16,14 @@ func PeersFromMultiaddrs(addrs []ma.Multiaddr) []peer.ID {
 	var pids []peer.ID
 	pm := make(map[peer.ID]struct{})
 	for _, addr := range addrs {
-		pid, _, err := api.Libp2pMultiaddrSplit(addr)
+		pinfo, err := peer.AddrInfoFromP2pAddr(addr)
 		if err != nil {
 			continue
 		}
-		_, ok := pm[pid]
+		_, ok := pm[pinfo.ID]
 		if !ok {
-			pm[pid] = struct{}{}
-			pids = append(pids, pid)
+			pm[pinfo.ID] = struct{}{}
+			pids = append(pids, pinfo.ID)
 		}
 	}
 	return pids
@@ -51,34 +48,6 @@ func PeersFromMultiaddrs(addrs []ma.Multiaddr) []peer.ID {
 // 	}
 // 	return addrs
 // }
-
-// If we have connections open to that PID and they are using a different addr
-// then we return the one we are using, otherwise the one provided
-func getRemoteMultiaddr(h host.Host, pid peer.ID, addr ma.Multiaddr) ma.Multiaddr {
-	conns := h.Network().ConnsToPeer(pid)
-	if len(conns) > 0 {
-		return api.MustLibp2pMultiaddrJoin(conns[0].RemoteMultiaddr(), pid)
-	}
-	return api.MustLibp2pMultiaddrJoin(addr, pid)
-}
-
-func pinInfoSliceToSerial(pi []api.PinInfo) []api.PinInfoSerial {
-	pis := make([]api.PinInfoSerial, len(pi), len(pi))
-	for i, v := range pi {
-		pis[i] = v.ToSerial()
-	}
-	return pis
-}
-
-// GlobalPinInfoSliceToSerial is a helper function for serializing a slice of
-// api.GlobalPinInfos.
-func GlobalPinInfoSliceToSerial(gpi []api.GlobalPinInfo) []api.GlobalPinInfoSerial {
-	gpis := make([]api.GlobalPinInfoSerial, len(gpi), len(gpi))
-	for i, v := range gpi {
-		gpis[i] = v.ToSerial()
-	}
-	return gpis
-}
 
 func logError(fmtstr string, args ...interface{}) error {
 	msg := fmt.Sprintf(fmtstr, args...)

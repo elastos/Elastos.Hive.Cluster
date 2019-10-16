@@ -1,20 +1,20 @@
 package metrics
 
 import (
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
+	"github.com/ipfs/ipfs-cluster/api"
 
-	peer "github.com/libp2p/go-libp2p-peer"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 )
 
 // PeersetFilter removes all metrics not belonging to the given
 // peerset
-func PeersetFilter(metrics []api.Metric, peerset []peer.ID) []api.Metric {
+func PeersetFilter(metrics []*api.Metric, peerset []peer.ID) []*api.Metric {
 	peerMap := make(map[peer.ID]struct{})
 	for _, pid := range peerset {
 		peerMap[pid] = struct{}{}
 	}
 
-	filtered := make([]api.Metric, 0, len(metrics))
+	filtered := make([]*api.Metric, 0, len(metrics))
 
 	for _, metric := range metrics {
 		_, ok := peerMap[metric.Peer]

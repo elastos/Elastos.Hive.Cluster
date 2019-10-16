@@ -8,7 +8,7 @@ import (
 	"io"
 	gopath "path"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
+	"github.com/ipfs/ipfs-cluster/api"
 
 	cid "github.com/ipfs/go-cid"
 	chunker "github.com/ipfs/go-ipfs-chunker"
@@ -102,11 +102,16 @@ func (adder *Adder) add(reader io.Reader) (ipld.Node, error) {
 		CidBuilder: adder.CidBuilder,
 	}
 
-	if adder.Trickle {
-		return trickle.Layout(params.New(chnk))
+	dbh, err := params.New(chnk)
+	if err != nil {
+		return nil, err
 	}
 
-	return balanced.Layout(params.New(chnk))
+	if adder.Trickle {
+		return trickle.Layout(dbh)
+	}
+
+	return balanced.Layout(dbh)
 }
 
 // RootNode returns the root node of the Added.
@@ -388,7 +393,7 @@ func outputDagnode(out chan *api.AddedOutput, name string, dn ipld.Node) error {
 	}
 
 	out <- &api.AddedOutput{
-		Cid:  dn.Cid().String(),
+		Cid:  dn.Cid(),
 		Name: name,
 		Size: s,
 	}

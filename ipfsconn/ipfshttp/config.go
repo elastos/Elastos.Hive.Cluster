@@ -6,21 +6,24 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/config"
+	"github.com/kelseyhightower/envconfig"
+
+	"github.com/ipfs/ipfs-cluster/config"
 
 	ma "github.com/multiformats/go-multiaddr"
 )
 
 const configKey = "ipfshttp"
+const envConfigKey = "cluster_ipfshttp"
 
 // Default values for Config.
 const (
 	DefaultNodeAddr           = "/ip4/127.0.0.1/tcp/5001"
 	DefaultConnectSwarmsDelay = 30 * time.Second
-	DefaultPinMethod          = "refs"
 	DefaultIPFSRequestTimeout = 5 * time.Minute
 	DefaultPinTimeout         = 24 * time.Hour
 	DefaultUnpinTimeout       = 3 * time.Hour
+	DefaultUnpinDisable       = false
 )
 
 // Config is used to initialize a Connector and allows to customize
@@ -36,11 +39,6 @@ type Config struct {
 	// IPFS daemons of other peers.
 	ConnectSwarmsDelay time.Duration
 
-	// "pin" or "refs". "pin" uses a "pin/add" call. "refs" uses a
-	// "refs -r" call followed by "pin/add". "refs" allows fetching in
-	// parallel but should be used with GC disabled.
-	PinMethod string
-
 	// IPFS Daemon HTTP Client POST timeout
 	IPFSRequestTimeout time.Duration
 
@@ -49,23 +47,21 @@ type Config struct {
 
 	// Unpin Operation timeout
 	UnpinTimeout time.Duration
+
+	// Disables the unpin operation and returns an error.
+	UnpinDisable bool
+
+	// Tracing flag used to skip tracing specific paths when not enabled.
+	Tracing bool
 }
 
 type jsonConfig struct {
 	NodeMultiaddress   string `json:"node_multiaddress"`
 	ConnectSwarmsDelay string `json:"connect_swarms_delay"`
-	PinMethod          string `json:"pin_method"`
 	IPFSRequestTimeout string `json:"ipfs_request_timeout"`
 	PinTimeout         string `json:"pin_timeout"`
 	UnpinTimeout       string `json:"unpin_timeout"`
-
-	// Fields below are only to maintain compatibility
-	// They can be removed in future
-	ProxyListenMultiaddress string `json:"proxy_listen_multiaddress,omitempty"`
-	ProxyReadTimeout        string `json:"proxy_read_timeout,omitempty"`
-	ProxyReadHeaderTimeout  string `json:"proxy_read_header_timeout,omitempty"`
-	ProxyWriteTimeout       string `json:"proxy_write_timeout,omitempty"`
-	ProxyIdleTimeout        string `json:"proxy_idle_timeout,omitempty"`
+	UnpinDisable       bool   `json:"unpin_disable,omitempty"`
 }
 
 // ConfigKey provides a human-friendly identifier for this type of Config.
@@ -78,12 +74,28 @@ func (cfg *Config) Default() error {
 	node, _ := ma.NewMultiaddr(DefaultNodeAddr)
 	cfg.NodeAddr = node
 	cfg.ConnectSwarmsDelay = DefaultConnectSwarmsDelay
-	cfg.PinMethod = DefaultPinMethod
 	cfg.IPFSRequestTimeout = DefaultIPFSRequestTimeout
 	cfg.PinTimeout = DefaultPinTimeout
 	cfg.UnpinTimeout = DefaultUnpinTimeout
+	cfg.UnpinDisable = DefaultUnpinDisable
 
 	return nil
+}
+
+// ApplyEnvVars fills in any Config fields found
+// as environment variables.
+func (cfg *Config) ApplyEnvVars() error {
+	jcfg, err := cfg.toJSONConfig()
+	if err != nil {
+		return err
+	}
+
+	err = envconfig.Process(envConfigKey, jcfg)
+	if err != nil {
+		return err
+	}
+
+	return cfg.applyJSONConfig(jcfg)
 }
 
 // Validate checks that the fields of this Config have sensible values,
@@ -96,12 +108,6 @@ func (cfg *Config) Validate() error {
 
 	if cfg.ConnectSwarmsDelay < 0 {
 		err = errors.New("ipfshttp.connect_swarms_delay is invalid")
-	}
-
-	switch cfg.PinMethod {
-	case "refs", "pin":
-	default:
-		err = errors.New("ipfshttp.pin_method invalid value")
 	}
 
 	if cfg.IPFSRequestTimeout < 0 {
@@ -130,12 +136,17 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 
 	cfg.Default()
 
+	return cfg.applyJSONConfig(jcfg)
+}
+
+func (cfg *Config) applyJSONConfig(jcfg *jsonConfig) error {
 	nodeAddr, err := ma.NewMultiaddr(jcfg.NodeMultiaddress)
 	if err != nil {
 		return fmt.Errorf("error parsing ipfs_node_multiaddress: %s", err)
 	}
 
 	cfg.NodeAddr = nodeAddr
+	cfg.UnpinDisable = jcfg.UnpinDisable
 
 	err = config.ParseDurations(
 		"ipfshttp",
@@ -148,13 +159,21 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 		return err
 	}
 
-	config.SetIfNotDefault(jcfg.PinMethod, &cfg.PinMethod)
-
 	return cfg.Validate()
 }
 
 // ToJSON generates a human-friendly JSON representation of this Config.
 func (cfg *Config) ToJSON() (raw []byte, err error) {
+	jcfg, err := cfg.toJSONConfig()
+	if err != nil {
+		return
+	}
+
+	raw, err = config.DefaultJSONMarshal(jcfg)
+	return
+}
+
+func (cfg *Config) toJSONConfig() (jcfg *jsonConfig, err error) {
 	// Multiaddress String() may panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -162,16 +181,15 @@ func (cfg *Config) ToJSON() (raw []byte, err error) {
 		}
 	}()
 
-	jcfg := &jsonConfig{}
+	jcfg = &jsonConfig{}
 
 	// Set all configuration fields
 	jcfg.NodeMultiaddress = cfg.NodeAddr.String()
 	jcfg.ConnectSwarmsDelay = cfg.ConnectSwarmsDelay.String()
-	jcfg.PinMethod = cfg.PinMethod
 	jcfg.IPFSRequestTimeout = cfg.IPFSRequestTimeout.String()
 	jcfg.PinTimeout = cfg.PinTimeout.String()
 	jcfg.UnpinTimeout = cfg.UnpinTimeout.String()
+	jcfg.UnpinDisable = cfg.UnpinDisable
 
-	raw, err = config.DefaultJSONMarshal(jcfg)
 	return
 }

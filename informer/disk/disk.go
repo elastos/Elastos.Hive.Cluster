@@ -3,12 +3,15 @@
 package disk
 
 import (
+	"context"
 	"fmt"
+
+	"github.com/ipfs/ipfs-cluster/api"
 
 	logging "github.com/ipfs/go-log"
 	rpc "github.com/libp2p/go-libp2p-gorpc"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
+	"go.opencensus.io/trace"
 )
 
 // MetricType identifies the type of metric to fetch from the IPFS daemon.
@@ -44,7 +47,7 @@ func NewInformer(cfg *Config) (*Informer, error) {
 
 // Name returns the user-facing name of this informer.
 func (disk *Informer) Name() string {
-	return disk.config.Type.String()
+	return disk.config.MetricType.String()
 }
 
 // SetClient provides us with an rpc.Client which allows
@@ -55,16 +58,22 @@ func (disk *Informer) SetClient(c *rpc.Client) {
 
 // Shutdown is called on cluster shutdown. We just invalidate
 // any metrics from this point.
-func (disk *Informer) Shutdown() error {
+func (disk *Informer) Shutdown(ctx context.Context) error {
+	ctx, span := trace.StartSpan(ctx, "informer/disk/Shutdown")
+	defer span.End()
+
 	disk.rpcClient = nil
 	return nil
 }
 
 // GetMetric returns the metric obtained by this
 // Informer.
-func (disk *Informer) GetMetric() api.Metric {
+func (disk *Informer) GetMetric(ctx context.Context) *api.Metric {
+	ctx, span := trace.StartSpan(ctx, "informer/disk/GetMetric")
+	defer span.End()
+
 	if disk.rpcClient == nil {
-		return api.Metric{
+		return &api.Metric{
 			Name:  disk.Name(),
 			Valid: false,
 		}
@@ -75,16 +84,19 @@ func (disk *Informer) GetMetric() api.Metric {
 
 	valid := true
 
-	err := disk.rpcClient.Call("",
-		"Cluster",
-		"IPFSRepoStat",
+	err := disk.rpcClient.CallContext(
+		ctx,
+		"",
+		"IPFSConnector",
+		"RepoStat",
 		struct{}{},
-		&repoStat)
+		&repoStat,
+	)
 	if err != nil {
 		logger.Error(err)
 		valid = false
 	} else {
-		switch disk.config.Type {
+		switch disk.config.MetricType {
 		case MetricFreeSpace:
 			metric = repoStat.StorageMax - repoStat.RepoSize
 		case MetricRepoSize:
@@ -92,7 +104,7 @@ func (disk *Informer) GetMetric() api.Metric {
 		}
 	}
 
-	m := api.Metric{
+	m := &api.Metric{
 		Name:  disk.Name(),
 		Value: fmt.Sprintf("%d", metric),
 		Valid: valid,

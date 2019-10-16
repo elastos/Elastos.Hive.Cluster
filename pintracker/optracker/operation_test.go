@@ -6,15 +6,14 @@ import (
 	"testing"
 	"time"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/test"
+	"github.com/ipfs/ipfs-cluster/api"
+	"github.com/ipfs/ipfs-cluster/test"
 )
 
 func TestOperation(t *testing.T) {
 	tim := time.Now().Add(-2 * time.Second)
-	h := test.MustDecodeCid(test.TestCid1)
-	op := NewOperation(context.Background(), api.PinCid(h), OperationUnpin, PhaseQueued)
-	if op.Cid() != h {
+	op := NewOperation(context.Background(), api.PinCid(test.Cid1), OperationUnpin, PhaseQueued)
+	if !op.Cid().Equals(test.Cid1) {
 		t.Error("bad cid")
 	}
 	if op.Phase() != PhaseQueued {

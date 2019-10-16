@@ -8,8 +8,8 @@ import (
 	"mime/multipart"
 	"strings"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/adder/ipfsadd"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
+	"github.com/ipfs/ipfs-cluster/adder/ipfsadd"
+	"github.com/ipfs/ipfs-cluster/api"
 
 	cid "github.com/ipfs/go-cid"
 	files "github.com/ipfs/go-ipfs-files"
@@ -94,7 +94,7 @@ func (a *Adder) FromMultipart(ctx context.Context, r *multipart.Reader) (cid.Cid
 // FromFiles adds content from a files.Directory. The adder will no longer
 // be usable after calling this method.
 func (a *Adder) FromFiles(ctx context.Context, f files.Directory) (cid.Cid, error) {
-	logger.Debugf("adding from files")
+	logger.Debug("adding from files")
 	a.setContext(ctx)
 
 	if a.ctx.Err() != nil { // don't allow running twice
@@ -117,6 +117,7 @@ func (a *Adder) FromFiles(ctx context.Context, f files.Directory) (cid.Cid, erro
 	ipfsAdder.Chunker = a.params.Chunker
 	ipfsAdder.Out = a.output
 	ipfsAdder.Progress = a.params.Progress
+	ipfsAdder.NoCopy = a.params.NoCopy
 
 	// Set up prefix
 	prefix, err := merkledag.PrefixForCidVersion(a.params.CidVersion)

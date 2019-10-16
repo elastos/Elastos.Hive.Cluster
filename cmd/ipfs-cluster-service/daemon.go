@@ -2,37 +2,43 @@ package main
 
 import (
 	"context"
-	"errors"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
-	host "github.com/libp2p/go-libp2p-host"
-	"github.com/urfave/cli"
+	ipfscluster "github.com/ipfs/ipfs-cluster"
+	"github.com/ipfs/ipfs-cluster/allocator/descendalloc"
+	"github.com/ipfs/ipfs-cluster/api/ipfsproxy"
+	"github.com/ipfs/ipfs-cluster/api/rest"
+	"github.com/ipfs/ipfs-cluster/cmdutils"
+	"github.com/ipfs/ipfs-cluster/config"
+	"github.com/ipfs/ipfs-cluster/consensus/crdt"
+	"github.com/ipfs/ipfs-cluster/consensus/raft"
+	"github.com/ipfs/ipfs-cluster/informer/disk"
+	"github.com/ipfs/ipfs-cluster/ipfsconn/ipfshttp"
+	"github.com/ipfs/ipfs-cluster/monitor/pubsubmon"
+	"github.com/ipfs/ipfs-cluster/observations"
+	"github.com/ipfs/ipfs-cluster/pintracker/maptracker"
+	"github.com/ipfs/ipfs-cluster/pintracker/stateless"
+	"go.opencensus.io/tag"
 
-	ipfscluster "github.com/elastos/Elastos.NET.Hive.Cluster"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/allocator/ascendalloc"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/allocator/descendalloc"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api/ipfsproxy"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api/rest"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/consensus/raft"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/informer/disk"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/informer/numpin"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/ipfsconn/ipfshttp"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/monitor/basic"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/monitor/pubsubmon"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/pintracker/maptracker"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/pintracker/stateless"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/pstoremgr"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/state/mapstate"
+	ds "github.com/ipfs/go-datastore"
+	host "github.com/libp2p/go-libp2p-core/host"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+	dht "github.com/libp2p/go-libp2p-kad-dht"
+	pubsub "github.com/libp2p/go-libp2p-pubsub"
 
 	ma "github.com/multiformats/go-multiaddr"
+
+	errors "github.com/pkg/errors"
+	cli "github.com/urfave/cli"
 )
 
 func parseBootstraps(flagVal []string) (bootstraps []ma.Multiaddr) {
 	for _, a := range flagVal {
-		bAddr, err := ma.NewMultiaddr(a)
+		bAddr, err := ma.NewMultiaddr(strings.TrimSpace(a))
 		checkErr("error parsing bootstrap multiaddress (%s)", err, a)
 		bootstraps = append(bootstraps, bAddr)
 	}
@@ -43,46 +49,51 @@ func parseBootstraps(flagVal []string) (bootstraps []ma.Multiaddr) {
 func daemon(c *cli.Context) error {
 	logger.Info("Initializing. For verbose output run with \"-l debug\". Please wait...")
 
-	// Load all the configurations
-	cfgMgr, cfgs := makeConfigs()
-
-	// Run any migrations
-	if c.Bool("upgrade") {
-		err := upgrade()
-		if err != errNoSnapshot {
-			checkErr("upgrading state", err)
-		} // otherwise continue
+	ctx, cancel := context.WithCancel(context.Background())
+	var bootstraps []ma.Multiaddr
+	if bootStr := c.String("bootstrap"); bootStr != "" {
+		bootstraps = parseBootstraps(strings.Split(bootStr, ","))
 	}
 
-	bootstraps := parseBootstraps(c.StringSlice("bootstrap"))
-
 	// Execution lock
-	err := locker.lock()
-	checkErr("acquiring execution lock", err)
+	locker.lock()
 	defer locker.tryUnlock()
 
-	// Load all the configurations
-	// always wait for configuration to be saved
-	defer cfgMgr.Shutdown()
+	// Load all the configurations and identity
+	cfgHelper := loadConfigHelper()
+	defer cfgHelper.Manager().Shutdown()
 
-	err = cfgMgr.LoadJSONFromFile(configPath)
-	checkErr("loading configuration", err)
+	cfgs := cfgHelper.Configs()
 
-	// Cleanup state if bootstrapping
+	if c.Bool("stats") {
+		cfgs.Metrics.EnableStats = true
+	}
+	cfgHelper.SetupTracing(c.Bool("tracing"))
+
+	// Setup bootstrapping
 	raftStaging := false
-	if len(bootstraps) > 0 {
-		cleanupState(cfgs.consensusCfg)
-		raftStaging = true
+	switch cfgHelper.GetConsensus() {
+	case cfgs.Raft.ConfigKey():
+		if len(bootstraps) > 0 {
+			// Cleanup state if bootstrapping
+			raft.CleanupRaft(cfgs.Raft)
+			raftStaging = true
+		}
+	case cfgs.Crdt.ConfigKey():
+		if !c.Bool("no-trust") {
+			crdtCfg := cfgs.Crdt
+			crdtCfg.TrustedPeers = append(crdtCfg.TrustedPeers, ipfscluster.PeersFromMultiaddrs(bootstraps)...)
+		}
 	}
 
 	if c.Bool("leave") {
-		cfgs.clusterCfg.LeaveOnShutdown = true
+		cfgs.Cluster.LeaveOnShutdown = true
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
+	host, pubsub, dht, err := ipfscluster.NewClusterHost(ctx, cfgHelper.Identity(), cfgs.Cluster)
+	checkErr("creating libp2p host", err)
 
-	cluster, err := createCluster(ctx, c, cfgs, raftStaging)
+	cluster, err := createCluster(ctx, c, cfgHelper, host, pubsub, dht, raftStaging)
 	checkErr("starting cluster", err)
 
 	// noop if no bootstraps
@@ -90,81 +101,129 @@ func daemon(c *cli.Context) error {
 	// and timeout. So this can happen in background and we
 	// avoid worrying about error handling here (since Cluster
 	// will realize).
-	go bootstrap(cluster, bootstraps)
+	go bootstrap(ctx, cluster, bootstraps)
 
-	return handleSignals(cluster)
+	return handleSignals(ctx, cancel, cluster, host, dht)
 }
 
+// createCluster creates all the necessary things to produce the cluster
+// object and returns it along the datastore so the lifecycle can be handled
+// (the datastore needs to be Closed after shutting down the Cluster).
 func createCluster(
 	ctx context.Context,
 	c *cli.Context,
-	cfgs *cfgs,
+	cfgHelper *cmdutils.ConfigHelper,
+	host host.Host,
+	pubsub *pubsub.PubSub,
+	dht *dht.IpfsDHT,
 	raftStaging bool,
 ) (*ipfscluster.Cluster, error) {
 
-	host, err := ipfscluster.NewClusterHost(ctx, cfgs.clusterCfg)
-	checkErr("creating libP2P Host", err)
+	cfgs := cfgHelper.Configs()
+	cfgMgr := cfgHelper.Manager()
 
-	peerstoreMgr := pstoremgr.New(host, cfgs.clusterCfg.GetPeerstorePath())
-	peerstoreMgr.ImportPeersFromPeerstore(false)
+	ctx, err := tag.New(ctx, tag.Upsert(observations.HostKey, host.ID().Pretty()))
+	checkErr("tag context with host id", err)
 
-	api, err := rest.NewAPIWithHost(cfgs.apiCfg, host)
-	checkErr("creating REST API component", err)
+	var apis []ipfscluster.API
+	if cfgMgr.IsLoadedFromJSON(config.API, cfgs.Restapi.ConfigKey()) {
+		rest, err := rest.NewAPIWithHost(ctx, cfgs.Restapi, host)
+		checkErr("creating REST API component", err)
+		apis = append(apis, rest)
+	}
 
-	proxy, err := ipfsproxy.New(cfgs.ipfsproxyCfg)
-	checkErr("creating IPFS Proxy component", err)
+	if cfgMgr.IsLoadedFromJSON(config.API, cfgs.Ipfsproxy.ConfigKey()) {
+		proxy, err := ipfsproxy.New(cfgs.Ipfsproxy)
+		checkErr("creating IPFS Proxy component", err)
 
-	apis := []ipfscluster.API{api, proxy}
+		apis = append(apis, proxy)
+	}
 
-	connector, err := ipfshttp.NewConnector(cfgs.ipfshttpCfg)
+	connector, err := ipfshttp.NewConnector(cfgs.Ipfshttp)
 	checkErr("creating IPFS Connector component", err)
 
-	state := mapstate.NewMapState()
-
-	err = validateVersion(cfgs.clusterCfg, cfgs.consensusCfg)
-	checkErr("validating version", err)
-
-	raftcon, err := raft.NewConsensus(
+	tracker := setupPinTracker(
+		c.String("pintracker"),
 		host,
-		cfgs.consensusCfg,
-		state,
+		cfgs.Maptracker,
+		cfgs.Statelesstracker,
+		cfgs.Cluster.Peername,
+	)
+
+	informer, err := disk.NewInformer(cfgs.Diskinf)
+	checkErr("creating disk informer", err)
+	alloc := descendalloc.NewAllocator()
+
+	ipfscluster.ReadyTimeout = cfgs.Raft.WaitForLeaderTimeout + 5*time.Second
+
+	err = observations.SetupMetrics(cfgs.Metrics)
+	checkErr("setting up Metrics", err)
+
+	tracer, err := observations.SetupTracing(cfgs.Tracing)
+	checkErr("setting up Tracing", err)
+
+	store := setupDatastore(cfgHelper)
+
+	cons, err := setupConsensus(
+		cfgHelper,
+		host,
+		dht,
+		pubsub,
+		store,
 		raftStaging,
 	)
-	checkErr("creating consensus component", err)
+	if err != nil {
+		store.Close()
+		checkErr("setting up Consensus", err)
+	}
 
-	tracker := setupPinTracker(c.String("pintracker"), host, cfgs.maptrackerCfg, cfgs.statelessTrackerCfg, cfgs.clusterCfg.Peername)
-	mon := setupMonitor(c.String("monitor"), host, cfgs.monCfg, cfgs.pubsubmonCfg)
-	informer, alloc := setupAllocation(c.String("alloc"), cfgs.diskInfCfg, cfgs.numpinInfCfg)
+	var peersF func(context.Context) ([]peer.ID, error)
+	if cfgHelper.GetConsensus() == cfgs.Raft.ConfigKey() {
+		peersF = cons.Peers
+	}
 
-	ipfscluster.ReadyTimeout = cfgs.consensusCfg.WaitForLeaderTimeout + 5*time.Second
+	mon, err := pubsubmon.New(ctx, cfgs.Pubsubmon, pubsub, peersF)
+	if err != nil {
+		store.Close()
+		checkErr("setting up PeerMonitor", err)
+	}
 
 	return ipfscluster.NewCluster(
+		ctx,
 		host,
-		cfgs.clusterCfg,
-		raftcon,
+		dht,
+		cfgs.Cluster,
+		store,
+		cons,
 		apis,
 		connector,
-		state,
 		tracker,
 		mon,
 		alloc,
 		informer,
+		tracer,
 	)
 }
 
 // bootstrap will bootstrap this peer to one of the bootstrap addresses
 // if there are any.
-func bootstrap(cluster *ipfscluster.Cluster, bootstraps []ma.Multiaddr) {
+func bootstrap(ctx context.Context, cluster *ipfscluster.Cluster, bootstraps []ma.Multiaddr) {
 	for _, bstrap := range bootstraps {
 		logger.Infof("Bootstrapping to %s", bstrap)
-		err := cluster.Join(bstrap)
+		err := cluster.Join(ctx, bstrap)
 		if err != nil {
 			logger.Errorf("bootstrap to %s failed: %s", bstrap, err)
 		}
 	}
 }
 
-func handleSignals(cluster *ipfscluster.Cluster) error {
+func handleSignals(
+	ctx context.Context,
+	cancel context.CancelFunc,
+	cluster *ipfscluster.Cluster,
+	host host.Host,
+	dht *dht.IpfsDHT,
+) error {
 	signalChan := make(chan os.Signal, 20)
 	signal.Notify(
 		signalChan,
@@ -178,18 +237,21 @@ func handleSignals(cluster *ipfscluster.Cluster) error {
 		select {
 		case <-signalChan:
 			ctrlcCount++
-			handleCtrlC(cluster, ctrlcCount)
+			handleCtrlC(ctx, cluster, ctrlcCount)
 		case <-cluster.Done():
+			cancel()
+			dht.Close()
+			host.Close()
 			return nil
 		}
 	}
 }
 
-func handleCtrlC(cluster *ipfscluster.Cluster, ctrlcCount int) {
+func handleCtrlC(ctx context.Context, cluster *ipfscluster.Cluster, ctrlcCount int) {
 	switch ctrlcCount {
 	case 1:
 		go func() {
-			err := cluster.Shutdown()
+			err := cluster.Shutdown(ctx)
 			checkErr("shutting down cluster", err)
 		}()
 	case 2:
@@ -208,56 +270,6 @@ Note that this may corrupt the local cluster state.
 		locker.tryUnlock()
 		os.Exit(-1)
 	}
-}
-
-func setupAllocation(
-	name string,
-	diskInfCfg *disk.Config,
-	numpinInfCfg *numpin.Config,
-) (ipfscluster.Informer, ipfscluster.PinAllocator) {
-	switch name {
-	case "disk", "disk-freespace":
-		informer, err := disk.NewInformer(diskInfCfg)
-		checkErr("creating informer", err)
-		return informer, descendalloc.NewAllocator()
-	case "disk-reposize":
-		informer, err := disk.NewInformer(diskInfCfg)
-		checkErr("creating informer", err)
-		return informer, ascendalloc.NewAllocator()
-	case "numpin", "pincount":
-		informer, err := numpin.NewInformer(numpinInfCfg)
-		checkErr("creating informer", err)
-		return informer, ascendalloc.NewAllocator()
-	default:
-		err := errors.New("unknown allocation strategy")
-		checkErr("", err)
-		return nil, nil
-	}
-}
-
-func setupMonitor(
-	name string,
-	h host.Host,
-	basicCfg *basic.Config,
-	pubsubCfg *pubsubmon.Config,
-) ipfscluster.PeerMonitor {
-	switch name {
-	case "basic":
-		mon, err := basic.NewMonitor(basicCfg)
-		checkErr("creating monitor", err)
-		logger.Debug("basic monitor loaded")
-		return mon
-	case "pubsub":
-		mon, err := pubsubmon.New(h, pubsubCfg)
-		checkErr("creating monitor", err)
-		logger.Debug("pubsub monitor loaded")
-		return mon
-	default:
-		err := errors.New("unknown monitor type")
-		checkErr("", err)
-		return nil
-	}
-
 }
 
 func setupPinTracker(
@@ -280,5 +292,52 @@ func setupPinTracker(
 		err := errors.New("unknown pintracker type")
 		checkErr("", err)
 		return nil
+	}
+}
+
+func setupDatastore(cfgHelper *cmdutils.ConfigHelper) ds.Datastore {
+	stmgr, err := cmdutils.NewStateManager(cfgHelper.GetConsensus(), cfgHelper.Identity(), cfgHelper.Configs())
+	checkErr("creating state manager", err)
+	store, err := stmgr.GetStore()
+	checkErr("creating datastore", err)
+	return store
+}
+
+func setupConsensus(
+	cfgHelper *cmdutils.ConfigHelper,
+	h host.Host,
+	dht *dht.IpfsDHT,
+	pubsub *pubsub.PubSub,
+	store ds.Datastore,
+	raftStaging bool,
+) (ipfscluster.Consensus, error) {
+
+	cfgs := cfgHelper.Configs()
+	switch cfgHelper.GetConsensus() {
+	case cfgs.Raft.ConfigKey():
+		rft, err := raft.NewConsensus(
+			h,
+			cfgHelper.Configs().Raft,
+			store,
+			raftStaging,
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating Raft component")
+		}
+		return rft, nil
+	case cfgs.Crdt.ConfigKey():
+		convrdt, err := crdt.New(
+			h,
+			dht,
+			pubsub,
+			cfgHelper.Configs().Crdt,
+			store,
+		)
+		if err != nil {
+			return nil, errors.Wrap(err, "creating CRDT component")
+		}
+		return convrdt, nil
+	default:
+		return nil, errors.New("unknown consensus component")
 	}
 }

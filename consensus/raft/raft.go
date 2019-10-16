@@ -9,13 +9,15 @@ import (
 	"path/filepath"
 	"time"
 
-	hraft "github.com/hashicorp/raft"
-	raftboltdb "github.com/hashicorp/raft-boltdb"
-	host "github.com/libp2p/go-libp2p-host"
-	peer "github.com/libp2p/go-libp2p-peer"
+	"github.com/ipfs/ipfs-cluster/state"
+
+	host "github.com/libp2p/go-libp2p-core/host"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	p2praft "github.com/libp2p/go-libp2p-raft"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/state"
+	hraft "github.com/hashicorp/raft"
+	raftboltdb "github.com/hashicorp/raft-boltdb"
+	"go.opencensus.io/trace"
 )
 
 // errBadRaftState is returned when the consensus component cannot start
@@ -36,14 +38,9 @@ var RaftMaxSnapshots = 5
 // This is used to reduce disk I/O for the recently committed entries.
 var RaftLogCacheSize = 512
 
-// Are we compiled on a 64-bit architecture?
-// https://groups.google.com/forum/#!topic/golang-nuts/vAckmhUMAdQ
-// This is used below because raft Observers panic on 32-bit.
-const sixtyfour = uint64(^uint(0)) == ^uint64(0)
-
 // How long we wait for updates during shutdown before snapshotting
 var waitForUpdatesShutdownTimeout = 5 * time.Second
-var waitForUpdatesInterval = 100 * time.Millisecond
+var waitForUpdatesInterval = 400 * time.Millisecond
 
 // How many times to retry snapshotting when shutting down
 var maxShutdownSnapshotRetries = 5
@@ -52,6 +49,8 @@ var maxShutdownSnapshotRetries = 5
 // different stores used or the hraft.Configuration.
 // Its methods provide functionality for working with Raft.
 type raftWrapper struct {
+	ctx           context.Context
+	cancel        context.CancelFunc
 	raft          *hraft.Raft
 	config        *Config
 	host          host.Host
@@ -113,31 +112,16 @@ func newRaftWrapper(
 		return nil, err
 	}
 
+	raftW.ctx, raftW.cancel = context.WithCancel(context.Background())
+	go raftW.observePeers()
+
 	return raftW, nil
 }
 
-// makeDataFolder creates the folder that is meant
-// to store Raft data.
+// makeDataFolder creates the folder that is meant to store Raft data. Ensures
+// we always set 0700 mode.
 func makeDataFolder(folder string) error {
-	// TODO(hector): Remove raft datafolder migration hack
-	// in the future
-	baseDir := filepath.Dir(folder)
-	legacyFolder := filepath.Join(baseDir, "ipfs-cluster-data")
-
-	if _, err := os.Stat(legacyFolder); err == nil {
-		// legacy data folder exists. Rename
-		logger.Warningf("Renaming legacy data folder: %s -> %s", legacyFolder, folder)
-		err := os.Rename(legacyFolder, folder)
-		if err != nil {
-			return err
-		}
-	}
-
-	err := os.MkdirAll(folder, 0700)
-	if err != nil {
-		return err
-	}
-	return nil
+	return os.MkdirAll(folder, 0700)
 }
 
 func (rw *raftWrapper) makeTransport() (err error) {
@@ -266,27 +250,14 @@ func makeServerConf(peers []peer.ID) hraft.Configuration {
 }
 
 // WaitForLeader holds until Raft says we have a leader.
-// Returns uf ctx is cancelled.
+// Returns if ctx is cancelled.
 func (rw *raftWrapper) WaitForLeader(ctx context.Context) (string, error) {
-	obsCh := make(chan hraft.Observation, 1)
-	if sixtyfour { // 32-bit systems don't support observers
-		observer := hraft.NewObserver(obsCh, false, nil)
-		rw.raft.RegisterObserver(observer)
-		defer rw.raft.DeregisterObserver(observer)
-	}
+	ctx, span := trace.StartSpan(ctx, "consensus/raft/WaitForLeader")
+	defer span.End()
+
 	ticker := time.NewTicker(time.Second / 2)
 	for {
 		select {
-		case obs := <-obsCh:
-			_ = obs
-			// See https://github.com/hashicorp/raft/issues/254
-			// switch obs.Data.(type) {
-			// case hraft.LeaderObservation:
-			// 	lObs := obs.Data.(hraft.LeaderObservation)
-			// 	logger.Infof("Raft Leader elected: %s",
-			// 		lObs.Leader)
-			// 	return string(lObs.Leader), nil
-			// }
 		case <-ticker.C:
 			if l := rw.raft.Leader(); l != "" {
 				logger.Debug("waitForleaderTimer")
@@ -301,6 +272,9 @@ func (rw *raftWrapper) WaitForLeader(ctx context.Context) (string, error) {
 }
 
 func (rw *raftWrapper) WaitForVoter(ctx context.Context) error {
+	ctx, span := trace.StartSpan(ctx, "consensus/raft/WaitForVoter")
+	defer span.End()
+
 	logger.Debug("waiting until we are promoted to a voter")
 
 	pid := hraft.ServerID(peer.IDB58Encode(rw.host.ID()))
@@ -309,6 +283,7 @@ func (rw *raftWrapper) WaitForVoter(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
+			logger.Debugf("%s: get configuration", pid)
 			configFuture := rw.raft.GetConfiguration()
 			if err := configFuture.Error(); err != nil {
 				return err
@@ -317,6 +292,7 @@ func (rw *raftWrapper) WaitForVoter(ctx context.Context) error {
 			if isVoter(pid, configFuture.Configuration()) {
 				return nil
 			}
+			logger.Debugf("%s: not voter yet", pid)
 
 			time.Sleep(waitForUpdatesInterval)
 		}
@@ -334,6 +310,9 @@ func isVoter(srvID hraft.ServerID, cfg hraft.Configuration) bool {
 
 // WaitForUpdates holds until Raft has synced to the last index in the log
 func (rw *raftWrapper) WaitForUpdates(ctx context.Context) error {
+	ctx, span := trace.StartSpan(ctx, "consensus/raft/WaitForUpdates")
+	defer span.End()
+
 	logger.Debug("Raft state is catching up to the latest known version. Please wait...")
 	for {
 		select {
@@ -353,12 +332,15 @@ func (rw *raftWrapper) WaitForUpdates(ctx context.Context) error {
 }
 
 func (rw *raftWrapper) WaitForPeer(ctx context.Context, pid string, depart bool) error {
+	ctx, span := trace.StartSpan(ctx, "consensus/raft/WaitForPeer")
+	defer span.End()
+
 	for {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
 		default:
-			peers, err := rw.Peers()
+			peers, err := rw.Peers(ctx)
 			if err != nil {
 				return err
 			}
@@ -432,8 +414,13 @@ func (rw *raftWrapper) snapshotOnShutdown() error {
 }
 
 // Shutdown shutdown Raft and closes the BoltDB.
-func (rw *raftWrapper) Shutdown() error {
+func (rw *raftWrapper) Shutdown(ctx context.Context) error {
+	ctx, span := trace.StartSpan(ctx, "consensus/raft/Shutdown")
+	defer span.End()
+
 	errMsgs := ""
+
+	rw.cancel()
 
 	err := rw.snapshotOnShutdown()
 	if err != nil {
@@ -459,10 +446,13 @@ func (rw *raftWrapper) Shutdown() error {
 }
 
 // AddPeer adds a peer to Raft
-func (rw *raftWrapper) AddPeer(peer string) error {
+func (rw *raftWrapper) AddPeer(ctx context.Context, peer string) error {
+	ctx, span := trace.StartSpan(ctx, "consensus/raft/AddPeer")
+	defer span.End()
+
 	// Check that we don't have it to not waste
 	// log entries if so.
-	peers, err := rw.Peers()
+	peers, err := rw.Peers(ctx)
 	if err != nil {
 		return err
 	}
@@ -475,7 +465,8 @@ func (rw *raftWrapper) AddPeer(peer string) error {
 		hraft.ServerID(peer),
 		hraft.ServerAddress(peer),
 		0,
-		0) // TODO: Extra cfg value?
+		0,
+	) // TODO: Extra cfg value?
 	err = future.Error()
 	if err != nil {
 		logger.Error("raft cannot add peer: ", err)
@@ -484,10 +475,13 @@ func (rw *raftWrapper) AddPeer(peer string) error {
 }
 
 // RemovePeer removes a peer from Raft
-func (rw *raftWrapper) RemovePeer(peer string) error {
+func (rw *raftWrapper) RemovePeer(ctx context.Context, peer string) error {
+	ctx, span := trace.StartSpan(ctx, "consensus/RemovePeer")
+	defer span.End()
+
 	// Check that we have it to not waste
 	// log entries if we don't.
-	peers, err := rw.Peers()
+	peers, err := rw.Peers(ctx)
 	if err != nil {
 		return err
 	}
@@ -503,7 +497,8 @@ func (rw *raftWrapper) RemovePeer(peer string) error {
 	rmFuture := rw.raft.RemoveServer(
 		hraft.ServerID(peer),
 		0,
-		0) // TODO: Extra cfg value?
+		0,
+	) // TODO: Extra cfg value?
 	err = rmFuture.Error()
 	if err != nil {
 		logger.Error("raft cannot remove peer: ", err)
@@ -515,11 +510,17 @@ func (rw *raftWrapper) RemovePeer(peer string) error {
 
 // Leader returns Raft's leader. It may be an empty string if
 // there is no leader or it is unknown.
-func (rw *raftWrapper) Leader() string {
+func (rw *raftWrapper) Leader(ctx context.Context) string {
+	ctx, span := trace.StartSpan(ctx, "consensus/raft/Leader")
+	defer span.End()
+
 	return string(rw.raft.Leader())
 }
 
-func (rw *raftWrapper) Peers() ([]string, error) {
+func (rw *raftWrapper) Peers(ctx context.Context) ([]string, error) {
+	ctx, span := trace.StartSpan(ctx, "consensus/raft/Peers")
+	defer span.End()
+
 	ids := make([]string, 0)
 
 	configFuture := rw.raft.GetConfiguration()
@@ -582,12 +583,8 @@ func LastStateRaw(cfg *Config) (io.Reader, bool, error) {
 // peer ids to include in the snapshot metadata if no snapshot exists
 // from which to copy the raft metadata
 func SnapshotSave(cfg *Config, newState state.State, pids []peer.ID) error {
-	newStateBytes, err := p2praft.EncodeSnapshot(newState)
-	if err != nil {
-		return err
-	}
 	dataFolder := cfg.GetDataFolder()
-	err = makeDataFolder(dataFolder)
+	err := makeDataFolder(dataFolder)
 	if err != nil {
 		return err
 	}
@@ -607,7 +604,7 @@ func SnapshotSave(cfg *Config, newState state.State, pids []peer.ID) error {
 		raftIndex = meta.Index
 		raftTerm = meta.Term
 		srvCfg = meta.Configuration
-		CleanupRaft(dataFolder, cfg.BackupsRotate)
+		CleanupRaft(cfg)
 	} else {
 		// Begin the log after the index of a fresh start so that
 		// the snapshot's state propagate's during bootstrap
@@ -627,7 +624,7 @@ func SnapshotSave(cfg *Config, newState state.State, pids []peer.ID) error {
 		return err
 	}
 
-	_, err = sink.Write(newStateBytes)
+	err = p2praft.EncodeSnapshot(newState, sink)
 	if err != nil {
 		sink.Cancel()
 		return err
@@ -640,7 +637,10 @@ func SnapshotSave(cfg *Config, newState state.State, pids []peer.ID) error {
 }
 
 // CleanupRaft moves the current data folder to a backup location
-func CleanupRaft(dataFolder string, keep int) error {
+func CleanupRaft(cfg *Config) error {
+	dataFolder := cfg.GetDataFolder()
+	keep := cfg.BackupsRotate
+
 	meta, _, err := latestSnapshot(dataFolder)
 	if meta == nil && err == nil {
 		// no snapshots at all. Avoid creating backups
@@ -663,7 +663,7 @@ func CleanupRaft(dataFolder string, keep int) error {
 
 // only call when Raft is shutdown
 func (rw *raftWrapper) Clean() error {
-	return CleanupRaft(rw.config.GetDataFolder(), rw.config.BackupsRotate)
+	return CleanupRaft(rw.config)
 }
 
 func find(s []string, elem string) bool {
@@ -673,4 +673,34 @@ func find(s []string, elem string) bool {
 		}
 	}
 	return false
+}
+
+func (rw *raftWrapper) observePeers() {
+	obsCh := make(chan hraft.Observation, 1)
+	defer close(obsCh)
+
+	observer := hraft.NewObserver(obsCh, true, func(o *hraft.Observation) bool {
+		po, ok := o.Data.(hraft.PeerObservation)
+		return ok && po.Removed
+	})
+
+	rw.raft.RegisterObserver(observer)
+	defer rw.raft.DeregisterObserver(observer)
+
+	for {
+		select {
+		case obs := <-obsCh:
+			pObs := obs.Data.(hraft.PeerObservation)
+			logger.Info("raft peer departed. Removing from peerstore: ", pObs.Peer.ID)
+			pID, err := peer.IDB58Decode(string(pObs.Peer.ID))
+			if err != nil {
+				logger.Error(err)
+				continue
+			}
+			rw.host.Peerstore().ClearAddrs(pID)
+		case <-rw.ctx.Done():
+			logger.Debug("stopped observing raft peers")
+			return
+		}
+	}
 }

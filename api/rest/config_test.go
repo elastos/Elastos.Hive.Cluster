@@ -1,34 +1,45 @@
 package rest
 
 import (
+	"context"
 	"encoding/json"
 	"os"
 	"testing"
 	"time"
 
-	crypto "github.com/libp2p/go-libp2p-crypto"
-	peer "github.com/libp2p/go-libp2p-peer"
+	crypto "github.com/libp2p/go-libp2p-core/crypto"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	ma "github.com/multiformats/go-multiaddr"
 )
 
 var cfgJSON = []byte(`
 {
-      "listen_multiaddress": "/ip4/127.0.0.1/tcp/12122",
-      "ssl_cert_file": "test/server.crt",
-      "ssl_key_file": "test/server.key",
-      "read_timeout": "30s",
-      "read_header_timeout": "5s",
-      "write_timeout": "1m0s",
-      "idle_timeout": "2m0s",
-      "basic_auth_credentials": null,
-      "cors_allowed_origins": ["myorigin"],
-      "cors_allowed_methods": ["GET"],
-      "cors_allowed_headers": ["X-Custom"],
-      "cors_exposed_headers": ["X-Chunked-Output"],
-      "cors_allow_credentials": false,
-      "cors_max_age": "1s"
+	"listen_multiaddress": "/ip4/127.0.0.1/tcp/12122",
+	"ssl_cert_file": "test/server.crt",
+	"ssl_key_file": "test/server.key",
+	"read_timeout": "30s",
+	"read_header_timeout": "5s",
+	"write_timeout": "1m0s",
+	"idle_timeout": "2m0s",
+	"max_header_bytes": 16384,
+	"basic_auth_credentials": null,
+	"http_log_file": "",
+	"cors_allowed_origins": ["myorigin"],
+	"cors_allowed_methods": ["GET"],
+	"cors_allowed_headers": ["X-Custom"],
+	"cors_exposed_headers": ["X-Chunked-Output"],
+	"cors_allow_credentials": false,
+	"cors_max_age": "1s"
 }
 `)
+
+func TestLoadEmptyJSON(t *testing.T) {
+	cfg := &Config{}
+	err := cfg.LoadJSON([]byte(`{}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+}
 
 func TestLoadJSON(t *testing.T) {
 	cfg := &Config{}
@@ -65,7 +76,7 @@ func TestLoadJSON(t *testing.T) {
 
 	j = &jsonConfig{}
 	json.Unmarshal(cfgJSON, j)
-	j.BasicAuthCreds = make(map[string]string)
+	j.BasicAuthCredentials = make(map[string]string)
 	tst, _ = json.Marshal(j)
 	err = cfg.LoadJSON(tst)
 	if err == nil {
@@ -107,38 +118,49 @@ func TestLoadJSON(t *testing.T) {
 	if err == nil {
 		t.Error("expected error with private key")
 	}
+
+	j = &jsonConfig{}
+	json.Unmarshal(cfgJSON, j)
+	j.MaxHeaderBytes = minMaxHeaderBytes - 1
+	tst, _ = json.Marshal(j)
+	err = cfg.LoadJSON(tst)
+	if err == nil {
+		t.Error("expected error with MaxHeaderBytes")
+	}
 }
 
-func TestLoadJSONEnvConfig(t *testing.T) {
+func TestApplyEnvVars(t *testing.T) {
 	username := "admin"
 	password := "thisaintmypassword"
 	user1 := "user1"
 	user1pass := "user1passwd"
-	os.Setenv("CLUSTER_RESTAPI_BASICAUTHCREDS", username+":"+password+","+user1+":"+user1pass)
+	os.Setenv("CLUSTER_RESTAPI_BASICAUTHCREDENTIALS", username+":"+password+","+user1+":"+user1pass)
 	cfg := &Config{}
-	err := cfg.LoadJSON(cfgJSON)
+	cfg.Default()
+	err := cfg.ApplyEnvVars()
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	if _, ok := cfg.BasicAuthCreds[username]; !ok {
-		t.Fatalf("username '%s' not set in BasicAuthCreds map: %v", username, cfg.BasicAuthCreds)
+	if _, ok := cfg.BasicAuthCredentials[username]; !ok {
+		t.Fatalf("username '%s' not set in BasicAuthCreds map: %v", username, cfg.BasicAuthCredentials)
 	}
 
-	if _, ok := cfg.BasicAuthCreds[user1]; !ok {
-		t.Fatalf("username '%s' not set in BasicAuthCreds map: %v", user1, cfg.BasicAuthCreds)
+	if _, ok := cfg.BasicAuthCredentials[user1]; !ok {
+		t.Fatalf("username '%s' not set in BasicAuthCreds map: %v", user1, cfg.BasicAuthCredentials)
 	}
 
-	if gotpasswd := cfg.BasicAuthCreds[username]; gotpasswd != password {
+	if gotpasswd := cfg.BasicAuthCredentials[username]; gotpasswd != password {
 		t.Errorf("password not what was set in env var, got: %s, want: %s", gotpasswd, password)
 	}
 
-	if gotpasswd := cfg.BasicAuthCreds[user1]; gotpasswd != user1pass {
+	if gotpasswd := cfg.BasicAuthCredentials[user1]; gotpasswd != user1pass {
 		t.Errorf("password not what was set in env var, got: %s, want: %s", gotpasswd, user1pass)
 	}
 }
 
 func TestLibp2pConfig(t *testing.T) {
+	ctx := context.Background()
 	cfg := &Config{}
 	err := cfg.Default()
 	if err != nil {
@@ -156,6 +178,7 @@ func TestLibp2pConfig(t *testing.T) {
 	cfg.ID = pid
 	cfg.PrivateKey = priv
 	addr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/tcp/0")
+	cfg.HTTPListenAddr = addr
 	cfg.Libp2pListenAddr = addr
 
 	err = cfg.Validate()
@@ -174,11 +197,11 @@ func TestLibp2pConfig(t *testing.T) {
 	}
 
 	// Test creating a new API with a libp2p config
-	rest, err := NewAPI(cfg)
+	rest, err := NewAPI(ctx, cfg)
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer rest.Shutdown()
+	defer rest.Shutdown(ctx)
 
 	badPid, _ := peer.IDB58Decode("QmTQ6oKHDwFjzr4ihirVCLJe8CxanxD3ZjGRYzubFuNDjE")
 	cfg.ID = badPid

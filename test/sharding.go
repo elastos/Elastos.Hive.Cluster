@@ -9,6 +9,8 @@ import (
 	"testing"
 
 	files "github.com/ipfs/go-ipfs-files"
+
+	cid "github.com/ipfs/go-cid"
 )
 
 const shardingTestDir = "shardTesting"
@@ -20,7 +22,6 @@ var (
 	ShardingDirBalancedRootCID        = "QmdHXJgxeCFf6qDZqYYmMesV2DbZCVPEdEhj2oVTxP1y7Y"
 	ShardingDirBalancedRootCIDWrapped = "QmbfGRPTUd7L1xsAZZ1A3kUFP1zkEZ9kHdb6AGaajBzGGX"
 	ShardingDirTrickleRootCID         = "QmYMbx56GFNBDAaAMchtjmWjDTdqNKCSGuFxtRosiPgJL6"
-
 	// These hashes should match all the blocks produced when adding
 	// the files resulting from GetShardingDir*
 	// They have been obtained by adding the "shardTesting" folder
@@ -59,8 +60,8 @@ var (
 	}
 
 	// Used for testing blockput/blockget
-	TestShardCid     = "zdpuAoiNm1ntWx6jpgcReTiCWFHJSTpvTw4bAAn9p6yDnznqh"
-	TestShardData, _ = hex.DecodeString("a16130d82a58230012209273fd63ec94bed5abb219b2d9cb010cabe4af7b0177292d4335eff50464060a")
+	ShardCid, _  = cid.Decode("zdpuAoiNm1ntWx6jpgcReTiCWFHJSTpvTw4bAAn9p6yDnznqh")
+	ShardData, _ = hex.DecodeString("a16130d82a58230012209273fd63ec94bed5abb219b2d9cb010cabe4af7b0177292d4335eff50464060a")
 )
 
 // ShardingTestHelper helps generating files and folders to test adding and

@@ -6,14 +6,14 @@ import (
 	"context"
 	"errors"
 
-	adder "github.com/elastos/Elastos.NET.Hive.Cluster/adder"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
+	adder "github.com/ipfs/ipfs-cluster/adder"
+	"github.com/ipfs/ipfs-cluster/api"
 
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	rpc "github.com/libp2p/go-libp2p-gorpc"
-	peer "github.com/libp2p/go-libp2p-peer"
 )
 
 var errNotFound = errors.New("dagservice: block not found")
@@ -30,10 +30,12 @@ type DAGService struct {
 
 	dests   []peer.ID
 	pinOpts api.PinOptions
+
+	ba *adder.BlockAdder
 }
 
 // New returns a new Adder with the given rpc Client. The client is used
-// to perform calls to IPFSBlockPut and Pin content on Cluster.
+// to perform calls to IPFS.BlockPut and Pin content on Cluster.
 func New(rpc *rpc.Client, opts api.PinOptions) *DAGService {
 	return &DAGService{
 		rpcClient: rpc,
@@ -50,19 +52,10 @@ func (dgs *DAGService) Add(ctx context.Context, node ipld.Node) error {
 			return err
 		}
 		dgs.dests = dests
+		dgs.ba = adder.NewBlockAdder(dgs.rpcClient, dests)
 	}
 
-	size, err := node.Size()
-	if err != nil {
-		return err
-	}
-	nodeSerial := &api.NodeWithMeta{
-		Cid:     node.Cid().String(),
-		Data:    node.RawData(),
-		CumSize: size,
-	}
-
-	return adder.PutBlock(ctx, dgs.rpcClient, nodeSerial, dgs.dests)
+	return dgs.ba.Add(ctx, node)
 }
 
 // Finalize pins the last Cid added to this DAGService.
@@ -73,13 +66,14 @@ func (dgs *DAGService) Finalize(ctx context.Context, root cid.Cid) (cid.Cid, err
 
 	dgs.dests = nil
 
+	var pinResp api.Pin
 	return root, dgs.rpcClient.CallContext(
 		ctx,
 		"",
 		"Cluster",
 		"Pin",
-		rootPin.ToSerial(),
-		&struct{}{},
+		rootPin,
+		&pinResp,
 	)
 }
 

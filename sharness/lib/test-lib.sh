@@ -5,6 +5,7 @@
 # We are using sharness (https://github.com/chriscool/sharness)
 # which was extracted from the Git test framework.
 
+SHARNESS_TEST_SRCDIR="lib/sharness/test"
 SHARNESS_LIB="lib/sharness/sharness.sh"
 
 # Daemons output will be redirected to...
@@ -60,6 +61,10 @@ test_ipfs_running() {
 
 test_cluster_init() {
     custom_config_files="$1"
+    consensus="$2"
+    if [ -z "$consensus" ]; then
+        consensus="crdt"
+    fi
 
     which ipfs-cluster-service >/dev/null 2>&1
     if [ $? -ne 0 ]; then
@@ -71,7 +76,7 @@ test_cluster_init() {
         echo "cluster init FAIL: ipfs-cluster-ctl not found"
         exit 1
     fi
-    ipfs-cluster-service -f --config "test-config" init >"$IPFS_OUTPUT" 2>&1
+    ipfs-cluster-service --config "test-config" init --force --consensus "$consensus" >"$IPFS_OUTPUT" 2>&1
     if [ $? -ne 0 ]; then
         echo "cluster init FAIL: error on ipfs cluster init"
         exit 1
@@ -84,14 +89,15 @@ test_cluster_init() {
 }
 
 test_cluster_config() {
-    export CLUSTER_CONFIG_PATH="test-config/service.json"
-    export CLUSTER_CONFIG_ID=`jq --raw-output ".cluster.id" $CLUSTER_CONFIG_PATH`
-    export CLUSTER_CONFIG_PK=`jq --raw-output ".cluster.private_key" $CLUSTER_CONFIG_PATH`
-    [ "$CLUSTER_CONFIG_ID" != "null" ] && [ "$CLUSTER_CONFIG_PK" != "null" ]
+    # export CLUSTER_CONFIG_PATH="test-config/service.json"
+    export CLUSTER_IDENTITY_PATH="test-config/identity.json"
+    export CLUSTER_IDENTITY_ID=`jq --raw-output ".id" $CLUSTER_IDENTITY_PATH`
+    export CLUSTER_IDENTITY_PK=`jq --raw-output ".private_key" $CLUSTER_IDENTITY_PATH`
+    [ "$CLUSTER_IDENTITY_ID" != "null" ] && [ "$CLUSTER_IDENTITY_PK" != "null" ]
 }
 
 cluster_id() {
-    jq --raw-output ".cluster.id" test-config/service.json
+    jq --raw-output ".id" test-config/identity.json
 }
 
 test_confirm_v1State() {
@@ -113,7 +119,7 @@ test_confirm_importState() {
 }
 
 cluster_kill(){
-    kill -1 "$CLUSTER_D_PID" &>/dev/null
+    pkill -1 -f ipfs-cluster-service
     while pgrep ipfs-cluster-service >/dev/null; do
         sleep 0.2
     done
@@ -121,7 +127,6 @@ cluster_kill(){
 
 cluster_start(){
     ipfs-cluster-service --config "test-config" daemon >"$IPFS_OUTPUT" 2>&1 &
-    export CLUSTER_D_PID=$!
     while ! curl -s 'localhost:9095/api/v0/version' >/dev/null; do
         sleep 0.2
     done

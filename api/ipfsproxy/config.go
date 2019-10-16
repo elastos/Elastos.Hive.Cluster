@@ -9,12 +9,13 @@ import (
 	"github.com/kelseyhightower/envconfig"
 	ma "github.com/multiformats/go-multiaddr"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/config"
+	"github.com/ipfs/ipfs-cluster/config"
 )
 
 const (
-	configKey    = "ipfsproxy"
-	envConfigKey = "cluster_ipfsproxy"
+	configKey         = "ipfsproxy"
+	envConfigKey      = "cluster_ipfsproxy"
+	minMaxHeaderBytes = 4096
 )
 
 // Default values for Config.
@@ -28,6 +29,7 @@ const (
 	DefaultIdleTimeout        = 60 * time.Second
 	DefaultExtractHeadersPath = "/api/v0/version"
 	DefaultExtractHeadersTTL  = 5 * time.Minute
+	DefaultMaxHeaderBytes     = minMaxHeaderBytes
 )
 
 // Config allows to customize behaviour of IPFSProxy.
@@ -53,6 +55,10 @@ type Config struct {
 	// Maximum duration before timing out write of the response
 	WriteTimeout time.Duration
 
+	// Maximum cumulative size of HTTP request headers in bytes
+	// accepted by the server
+	MaxHeaderBytes int
+
 	// Server-side amount of time a Keep-Alive connection will be
 	// kept idle before being reused
 	IdleTimeout time.Duration
@@ -74,53 +80,25 @@ type Config struct {
 	// Establishes how long we should remember extracted headers before we
 	// refresh them with a new request. 0 means always.
 	ExtractHeadersTTL time.Duration
+
+	// Tracing flag used to skip tracing specific paths when not enabled.
+	Tracing bool
 }
 
 type jsonConfig struct {
 	ListenMultiaddress string `json:"listen_multiaddress"`
 	NodeMultiaddress   string `json:"node_multiaddress"`
-	NodeHTTPS          string `json:"node_https,omitempty"`
+	NodeHTTPS          bool   `json:"node_https,omitempty"`
 
 	ReadTimeout       string `json:"read_timeout"`
 	ReadHeaderTimeout string `json:"read_header_timeout"`
 	WriteTimeout      string `json:"write_timeout"`
 	IdleTimeout       string `json:"idle_timeout"`
+	MaxHeaderBytes    int    `json:"max_header_bytes"`
 
 	ExtractHeadersExtra []string `json:"extract_headers_extra,omitempty"`
 	ExtractHeadersPath  string   `json:"extract_headers_path,omitempty"`
 	ExtractHeadersTTL   string   `json:"extract_headers_ttl,omitempty"`
-
-	// Below fields are only here to maintain backward compatibility
-	// They will be removed in future
-	ProxyListenMultiaddress string `json:"proxy_listen_multiaddress,omitempty"`
-	ProxyReadTimeout        string `json:"proxy_read_timeout,omitempty"`
-	ProxyReadHeaderTimeout  string `json:"proxy_read_header_timeout,omitempty"`
-	ProxyWriteTimeout       string `json:"proxy_write_timeout,omitempty"`
-	ProxyIdleTimeout        string `json:"proxy_idle_timeout,omitempty"`
-}
-
-// toNewFields converts json config written in old style (fields starting with `proxy_`)
-// to new style (without `proxy_`)
-func (jcfg *jsonConfig) toNewFields() {
-	if jcfg.ListenMultiaddress == "" {
-		jcfg.ListenMultiaddress = jcfg.ProxyListenMultiaddress
-	}
-
-	if jcfg.ReadTimeout == "" {
-		jcfg.ReadTimeout = jcfg.ProxyReadTimeout
-	}
-
-	if jcfg.ReadHeaderTimeout == "" {
-		jcfg.ReadHeaderTimeout = jcfg.ProxyReadHeaderTimeout
-	}
-
-	if jcfg.WriteTimeout == "" {
-		jcfg.WriteTimeout = jcfg.ProxyWriteTimeout
-	}
-
-	if jcfg.IdleTimeout == "" {
-		jcfg.IdleTimeout = jcfg.ProxyIdleTimeout
-	}
 }
 
 // ConfigKey provides a human-friendly identifier for this type of Config.
@@ -147,8 +125,25 @@ func (cfg *Config) Default() error {
 	cfg.ExtractHeadersExtra = nil
 	cfg.ExtractHeadersPath = DefaultExtractHeadersPath
 	cfg.ExtractHeadersTTL = DefaultExtractHeadersTTL
+	cfg.MaxHeaderBytes = DefaultMaxHeaderBytes
 
 	return nil
+}
+
+// ApplyEnvVars fills in any Config fields found
+// as environment variables.
+func (cfg *Config) ApplyEnvVars() error {
+	jcfg, err := cfg.toJSONConfig()
+	if err != nil {
+		return err
+	}
+
+	err = envconfig.Process(envConfigKey, jcfg)
+	if err != nil {
+		return err
+	}
+
+	return cfg.applyJSONConfig(jcfg)
 }
 
 // Validate checks that the fields of this Config have sensible values,
@@ -186,6 +181,10 @@ func (cfg *Config) Validate() error {
 		err = errors.New("ipfsproxy.extract_headers_ttl is invalid")
 	}
 
+	if cfg.MaxHeaderBytes < minMaxHeaderBytes {
+		err = fmt.Errorf("ipfsproxy.max_header_size must be greater or equal to %d", minMaxHeaderBytes)
+	}
+
 	return err
 }
 
@@ -198,35 +197,32 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 		return err
 	}
 
-	// This is here only here to maintain backward compatibility
-	// This won't be needed after removing old style fields(starting with `proxy_`)
-	jcfg.toNewFields()
-
 	err = cfg.Default()
 	if err != nil {
 		return fmt.Errorf("error setting config to default values: %s", err)
 	}
 
-	// override json config with env var
-	err = envconfig.Process("cluster_ipfsproxy", jcfg)
-	if err != nil {
-		return err
-	}
+	return cfg.applyJSONConfig(jcfg)
+}
 
-	proxyAddr, err := ma.NewMultiaddr(jcfg.ListenMultiaddress)
-	if err != nil {
-		return fmt.Errorf("error parsing proxy listen_multiaddress: %s", err)
+func (cfg *Config) applyJSONConfig(jcfg *jsonConfig) error {
+	if jcfg.ListenMultiaddress != "" {
+		proxyAddr, err := ma.NewMultiaddr(jcfg.ListenMultiaddress)
+		if err != nil {
+			return fmt.Errorf("error parsing proxy listen_multiaddress: %s", err)
+		}
+		cfg.ListenAddr = proxyAddr
 	}
-	nodeAddr, err := ma.NewMultiaddr(jcfg.NodeMultiaddress)
-	if err != nil {
-		return fmt.Errorf("error parsing ipfs node_multiaddress: %s", err)
+	if jcfg.NodeMultiaddress != "" {
+		nodeAddr, err := ma.NewMultiaddr(jcfg.NodeMultiaddress)
+		if err != nil {
+			return fmt.Errorf("error parsing ipfs node_multiaddress: %s", err)
+		}
+		cfg.NodeAddr = nodeAddr
 	}
-
-	cfg.ListenAddr = proxyAddr
-	cfg.NodeAddr = nodeAddr
 	config.SetIfNotDefault(jcfg.NodeHTTPS, &cfg.NodeHTTPS)
 
-	err = config.ParseDurations(
+	err := config.ParseDurations(
 		"ipfsproxy",
 		&config.DurationOpt{Duration: jcfg.ReadTimeout, Dst: &cfg.ReadTimeout, Name: "read_timeout"},
 		&config.DurationOpt{Duration: jcfg.ReadHeaderTimeout, Dst: &cfg.ReadHeaderTimeout, Name: "read_header_timeout"},
@@ -236,6 +232,12 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 	)
 	if err != nil {
 		return err
+	}
+
+	if jcfg.MaxHeaderBytes == 0 {
+		cfg.MaxHeaderBytes = DefaultMaxHeaderBytes
+	} else {
+		cfg.MaxHeaderBytes = jcfg.MaxHeaderBytes
 	}
 
 	if extra := jcfg.ExtractHeadersExtra; extra != nil && len(extra) > 0 {
@@ -248,6 +250,16 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 
 // ToJSON generates a human-friendly JSON representation of this Config.
 func (cfg *Config) ToJSON() (raw []byte, err error) {
+	jcfg, err := cfg.toJSONConfig()
+	if err != nil {
+		return
+	}
+
+	raw, err = config.DefaultJSONMarshal(jcfg)
+	return
+}
+
+func (cfg *Config) toJSONConfig() (jcfg *jsonConfig, err error) {
 	// Multiaddress String() may panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -255,7 +267,7 @@ func (cfg *Config) ToJSON() (raw []byte, err error) {
 		}
 	}()
 
-	jcfg := &jsonConfig{}
+	jcfg = &jsonConfig{}
 
 	// Set all configuration fields
 	jcfg.ListenMultiaddress = cfg.ListenAddr.String()
@@ -264,11 +276,16 @@ func (cfg *Config) ToJSON() (raw []byte, err error) {
 	jcfg.ReadHeaderTimeout = cfg.ReadHeaderTimeout.String()
 	jcfg.WriteTimeout = cfg.WriteTimeout.String()
 	jcfg.IdleTimeout = cfg.IdleTimeout.String()
+	jcfg.MaxHeaderBytes = cfg.MaxHeaderBytes
+	jcfg.NodeHTTPS = cfg.NodeHTTPS
 
 	jcfg.ExtractHeadersExtra = cfg.ExtractHeadersExtra
-	jcfg.ExtractHeadersPath = cfg.ExtractHeadersPath
-	jcfg.ExtractHeadersTTL = cfg.ExtractHeadersTTL.String()
+	if cfg.ExtractHeadersPath != DefaultExtractHeadersPath {
+		jcfg.ExtractHeadersPath = cfg.ExtractHeadersPath
+	}
+	if ttl := cfg.ExtractHeadersTTL; ttl != DefaultExtractHeadersTTL {
+		jcfg.ExtractHeadersTTL = ttl.String()
+	}
 
-	raw, err = config.DefaultJSONMarshal(jcfg)
 	return
 }

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"strconv"
+
+	cid "github.com/ipfs/go-cid"
 )
 
 // DefaultShardSize is the shard size for params objects created with DefaultParams().
@@ -13,10 +15,10 @@ var DefaultShardSize = uint64(100 * 1024 * 1024) // 100 MB
 // AddedOutput carries information for displaying the standard ipfs output
 // indicating a node of a file has been added.
 type AddedOutput struct {
-	Name  string `json:"name"`
-	Cid   string `json:"cid,omitempty"`
-	Bytes uint64 `json:"bytes,omitempty"`
-	Size  uint64 `json:"size,omitempty"`
+	Name  string  `json:"name" codec:"n,omitempty"`
+	Cid   cid.Cid `json:"cid" codec:"c"`
+	Bytes uint64  `json:"bytes,omitempty" codec:"b,omitempty"`
+	Size  uint64  `json:"size,omitempty" codec:"s,omitempty"`
 }
 
 // AddParams contains all of the configurable parameters needed to specify the
@@ -35,6 +37,7 @@ type AddParams struct {
 	CidVersion     int
 	HashFun        string
 	StreamChannels bool
+	NoCopy         bool
 }
 
 // DefaultAddParams returns a AddParams object with standard defaults
@@ -51,11 +54,13 @@ func DefaultAddParams() *AddParams {
 		CidVersion:     0,
 		HashFun:        "sha2-256",
 		StreamChannels: true,
+		NoCopy:         false,
 		PinOptions: PinOptions{
 			ReplicationFactorMin: 0,
 			ReplicationFactorMax: 0,
 			Name:                 "",
 			ShardSize:            DefaultShardSize,
+			Metadata:             make(map[string]string),
 		},
 	}
 }
@@ -87,6 +92,14 @@ func parseIntParam(q url.Values, name string, dest *int) error {
 func AddParamsFromQuery(query url.Values) (*AddParams, error) {
 	params := DefaultAddParams()
 
+	opts := &PinOptions{}
+	err := opts.FromQuery(query)
+	if err != nil {
+		return nil, err
+	}
+	params.PinOptions = *opts
+	params.PinUpdate = cid.Undef // hardcode as does not make sense for adding
+
 	layout := query.Get("layout")
 	switch layout {
 	case "trickle", "balanced", "":
@@ -97,16 +110,16 @@ func AddParamsFromQuery(query url.Values) (*AddParams, error) {
 	params.Layout = layout
 
 	chunker := query.Get("chunker")
-	params.Chunker = chunker
-	name := query.Get("name")
-	params.Name = name
+	if chunker != "" {
+		params.Chunker = chunker
+	}
 
 	hashF := query.Get("hash")
 	if hashF != "" {
 		params.HashFun = hashF
 	}
 
-	err := parseBoolParam(query, "recursive", &params.Recursive)
+	err = parseBoolParam(query, "recursive", &params.Recursive)
 	if err != nil {
 		return nil, err
 	}
@@ -133,29 +146,17 @@ func AddParamsFromQuery(query url.Values) (*AddParams, error) {
 		return nil, err
 	}
 
-	err = parseIntParam(query, "replication-min", &params.ReplicationFactorMin)
-	if err != nil {
-		return nil, err
-	}
-	err = parseIntParam(query, "replication-max", &params.ReplicationFactorMax)
-	if err != nil {
-		return nil, err
-	}
-
 	err = parseIntParam(query, "cid-version", &params.CidVersion)
 	if err != nil {
 		return nil, err
 	}
 
-	if v := query.Get("shard-size"); v != "" {
-		shardSize, err := strconv.ParseUint(v, 10, 64)
-		if err != nil {
-			return nil, errors.New("parameter shard_size is invalid")
-		}
-		params.ShardSize = shardSize
+	err = parseBoolParam(query, "stream-channels", &params.StreamChannels)
+	if err != nil {
+		return nil, err
 	}
 
-	err = parseBoolParam(query, "stream-channels", &params.StreamChannels)
+	err = parseBoolParam(query, "nocopy", &params.NoCopy)
 	if err != nil {
 		return nil, err
 	}
@@ -165,12 +166,9 @@ func AddParamsFromQuery(query url.Values) (*AddParams, error) {
 
 // ToQueryString returns a url query string (key=value&key2=value2&...)
 func (p *AddParams) ToQueryString() string {
-	query := url.Values{}
-	query.Set("replication-min", fmt.Sprintf("%d", p.ReplicationFactorMin))
-	query.Set("replication-max", fmt.Sprintf("%d", p.ReplicationFactorMax))
-	query.Set("name", p.Name)
+	pinOptsQuery := p.PinOptions.ToQuery()
+	query, _ := url.ParseQuery(pinOptsQuery)
 	query.Set("shard", fmt.Sprintf("%t", p.Shard))
-	query.Set("shard-size", fmt.Sprintf("%d", p.ShardSize))
 	query.Set("recursive", fmt.Sprintf("%t", p.Recursive))
 	query.Set("layout", p.Layout)
 	query.Set("chunker", p.Chunker)
@@ -181,17 +179,15 @@ func (p *AddParams) ToQueryString() string {
 	query.Set("cid-version", fmt.Sprintf("%d", p.CidVersion))
 	query.Set("hash", p.HashFun)
 	query.Set("stream-channels", fmt.Sprintf("%t", p.StreamChannels))
+	query.Set("nocopy", fmt.Sprintf("%t", p.NoCopy))
 	return query.Encode()
 }
 
 // Equals checks if p equals p2.
 func (p *AddParams) Equals(p2 *AddParams) bool {
-	return p.ReplicationFactorMin == p2.ReplicationFactorMin &&
-		p.ReplicationFactorMax == p2.ReplicationFactorMax &&
-		p.Name == p2.Name &&
+	return p.PinOptions.Equals(&p2.PinOptions) &&
 		p.Recursive == p2.Recursive &&
 		p.Shard == p2.Shard &&
-		p.ShardSize == p2.ShardSize &&
 		p.Layout == p2.Layout &&
 		p.Chunker == p2.Chunker &&
 		p.RawLeaves == p2.RawLeaves &&
@@ -199,5 +195,6 @@ func (p *AddParams) Equals(p2 *AddParams) bool {
 		p.Wrap == p2.Wrap &&
 		p.CidVersion == p2.CidVersion &&
 		p.HashFun == p2.HashFun &&
-		p.StreamChannels == p2.StreamChannels
+		p.StreamChannels == p2.StreamChannels &&
+		p.NoCopy == p2.NoCopy
 }

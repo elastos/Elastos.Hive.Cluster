@@ -10,18 +10,20 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/config"
+	"github.com/ipfs/ipfs-cluster/config"
+
+	crypto "github.com/libp2p/go-libp2p-core/crypto"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+	ma "github.com/multiformats/go-multiaddr"
 
 	"github.com/kelseyhightower/envconfig"
-
-	crypto "github.com/libp2p/go-libp2p-crypto"
-	peer "github.com/libp2p/go-libp2p-peer"
-	ma "github.com/multiformats/go-multiaddr"
 	"github.com/rs/cors"
 )
 
 const configKey = "restapi"
 const envConfigKey = "cluster_restapi"
+
+const minMaxHeaderBytes = 4096
 
 // These are the default values for Config
 const (
@@ -30,6 +32,7 @@ const (
 	DefaultReadHeaderTimeout = 5 * time.Second
 	DefaultWriteTimeout      = 0
 	DefaultIdleTimeout       = 120 * time.Second
+	DefaultMaxHeaderBytes    = minMaxHeaderBytes
 )
 
 // These are the default values for Config.
@@ -89,6 +92,10 @@ type Config struct {
 	// kept idle before being reused
 	IdleTimeout time.Duration
 
+	// Maximum cumulative size of HTTP request headers in bytes
+	// accepted by the server
+	MaxHeaderBytes int
+
 	// Listen address for the Libp2p REST API endpoint.
 	Libp2pListenAddr ma.Multiaddr
 
@@ -97,9 +104,15 @@ type Config struct {
 	ID         peer.ID
 	PrivateKey crypto.PrivKey
 
-	// BasicAuthCreds is a map of username-password pairs
+	// BasicAuthCredentials is a map of username-password pairs
 	// which are authorized to use Basic Authentication
-	BasicAuthCreds map[string]string
+	BasicAuthCredentials map[string]string
+
+	// HTTPLogFile is path of the file that would save HTTP API logs. If this
+	// path is empty, HTTP logs would be sent to standard output. This path
+	// should either be absolute or relative to cluster base directory. Its
+	// default value is empty.
+	HTTPLogFile string
 
 	// Headers provides customization for the headers returned
 	// by the API on existing routes.
@@ -112,10 +125,12 @@ type Config struct {
 	CORSExposedHeaders   []string
 	CORSAllowCredentials bool
 	CORSMaxAge           time.Duration
+
+	// Tracing flag used to skip tracing specific paths when not enabled.
+	Tracing bool
 }
 
 type jsonConfig struct {
-	ListenMultiaddress     string `json:"listen_multiaddress,omitempty"` // backwards compat
 	HTTPListenMultiaddress string `json:"http_listen_multiaddress"`
 	SSLCertFile            string `json:"ssl_cert_file,omitempty"`
 	SSLKeyFile             string `json:"ssl_key_file,omitempty"`
@@ -123,13 +138,15 @@ type jsonConfig struct {
 	ReadHeaderTimeout      string `json:"read_header_timeout"`
 	WriteTimeout           string `json:"write_timeout"`
 	IdleTimeout            string `json:"idle_timeout"`
+	MaxHeaderBytes         int    `json:"max_header_bytes"`
 
 	Libp2pListenMultiaddress string `json:"libp2p_listen_multiaddress,omitempty"`
 	ID                       string `json:"id,omitempty"`
 	PrivateKey               string `json:"private_key,omitempty"`
 
-	BasicAuthCreds map[string]string   `json:"basic_auth_credentials"`
-	Headers        map[string][]string `json:"headers"`
+	BasicAuthCredentials map[string]string   `json:"basic_auth_credentials"`
+	HTTPLogFile          string              `json:"http_log_file"`
+	Headers              map[string][]string `json:"headers"`
 
 	CORSAllowedOrigins   []string `json:"cors_allowed_origins"`
 	CORSAllowedMethods   []string `json:"cors_allowed_methods"`
@@ -137,6 +154,20 @@ type jsonConfig struct {
 	CORSExposedHeaders   []string `json:"cors_exposed_headers"`
 	CORSAllowCredentials bool     `json:"cors_allow_credentials"`
 	CORSMaxAge           string   `json:"cors_max_age"`
+}
+
+// getHTTPLogPath gets full path of the file where http logs should be
+// saved.
+func (cfg *Config) getHTTPLogPath() string {
+	if filepath.IsAbs(cfg.HTTPLogFile) {
+		return cfg.HTTPLogFile
+	}
+
+	if cfg.BaseDir == "" {
+		return ""
+	}
+
+	return filepath.Join(cfg.BaseDir, cfg.HTTPLogFile)
 }
 
 // ConfigKey returns a human-friendly identifier for this type of
@@ -156,6 +187,7 @@ func (cfg *Config) Default() error {
 	cfg.ReadHeaderTimeout = DefaultReadHeaderTimeout
 	cfg.WriteTimeout = DefaultWriteTimeout
 	cfg.IdleTimeout = DefaultIdleTimeout
+	cfg.MaxHeaderBytes = DefaultMaxHeaderBytes
 
 	// libp2p
 	cfg.ID = ""
@@ -163,7 +195,10 @@ func (cfg *Config) Default() error {
 	cfg.Libp2pListenAddr = nil
 
 	// Auth
-	cfg.BasicAuthCreds = nil
+	cfg.BasicAuthCredentials = nil
+
+	// Logs
+	cfg.HTTPLogFile = ""
 
 	// Headers
 	cfg.Headers = DefaultHeaders
@@ -178,6 +213,22 @@ func (cfg *Config) Default() error {
 	return nil
 }
 
+// ApplyEnvVars fills in any Config fields found
+// as environment variables.
+func (cfg *Config) ApplyEnvVars() error {
+	jcfg, err := cfg.toJSONConfig()
+	if err != nil {
+		return err
+	}
+
+	err = envconfig.Process(envConfigKey, jcfg)
+	if err != nil {
+		return err
+	}
+
+	return cfg.applyJSONConfig(jcfg)
+}
+
 // Validate makes sure that all fields in this Config have
 // working values, at least in appearance.
 func (cfg *Config) Validate() error {
@@ -190,7 +241,9 @@ func (cfg *Config) Validate() error {
 		return errors.New("restapi.write_timeout is invalid")
 	case cfg.IdleTimeout < 0:
 		return errors.New("restapi.idle_timeout invalid")
-	case cfg.BasicAuthCreds != nil && len(cfg.BasicAuthCreds) == 0:
+	case cfg.MaxHeaderBytes < minMaxHeaderBytes:
+		return fmt.Errorf("restapi.max_header_bytes must be not less then %d", minMaxHeaderBytes)
+	case cfg.BasicAuthCredentials != nil && len(cfg.BasicAuthCredentials) == 0:
 		return errors.New("restapi.basic_auth_creds should be null or have at least one entry")
 	case (cfg.pathSSLCertFile != "" || cfg.pathSSLKeyFile != "") && cfg.TLS == nil:
 		return errors.New("restapi: missing TLS configuration")
@@ -227,13 +280,11 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 
 	cfg.Default()
 
-	// override json config with env var
-	err = envconfig.Process(envConfigKey, jcfg)
-	if err != nil {
-		return err
-	}
+	return cfg.applyJSONConfig(jcfg)
+}
 
-	err = cfg.loadHTTPOptions(jcfg)
+func (cfg *Config) applyJSONConfig(jcfg *jsonConfig) error {
+	err := cfg.loadHTTPOptions(jcfg)
 	if err != nil {
 		return err
 	}
@@ -243,23 +294,15 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 	}
 
 	// Other options
-	cfg.BasicAuthCreds = jcfg.BasicAuthCreds
+	cfg.BasicAuthCredentials = jcfg.BasicAuthCredentials
+	cfg.HTTPLogFile = jcfg.HTTPLogFile
 	cfg.Headers = jcfg.Headers
 
 	return cfg.Validate()
 }
 
 func (cfg *Config) loadHTTPOptions(jcfg *jsonConfig) error {
-	// Deal with legacy ListenMultiaddress parameter
-	httpListen := jcfg.ListenMultiaddress
-	if httpListen != "" {
-		logger.Warning("restapi.listen_multiaddress has been replaced with http_listen_multiaddress and has been deprecated")
-	}
-	if l := jcfg.HTTPListenMultiaddress; l != "" {
-		httpListen = l
-	}
-
-	if httpListen != "" {
+	if httpListen := jcfg.HTTPListenMultiaddress; httpListen != "" {
 		httpAddr, err := ma.NewMultiaddr(httpListen)
 		if err != nil {
 			err = fmt.Errorf("error parsing restapi.http_listen_multiaddress: %s", err)
@@ -271,6 +314,12 @@ func (cfg *Config) loadHTTPOptions(jcfg *jsonConfig) error {
 	err := cfg.tlsOptions(jcfg)
 	if err != nil {
 		return err
+	}
+
+	if jcfg.MaxHeaderBytes == 0 {
+		cfg.MaxHeaderBytes = DefaultMaxHeaderBytes
+	} else {
+		cfg.MaxHeaderBytes = jcfg.MaxHeaderBytes
 	}
 
 	// CORS
@@ -358,6 +407,16 @@ func (cfg *Config) loadLibp2pOptions(jcfg *jsonConfig) error {
 // ToJSON produce a human-friendly JSON representation of the Config
 // object.
 func (cfg *Config) ToJSON() (raw []byte, err error) {
+	jcfg, err := cfg.toJSONConfig()
+	if err != nil {
+		return
+	}
+
+	raw, err = config.DefaultJSONMarshal(jcfg)
+	return
+}
+
+func (cfg *Config) toJSONConfig() (jcfg *jsonConfig, err error) {
 	// Multiaddress String() may panic
 	defer func() {
 		if r := recover(); r != nil {
@@ -365,7 +424,7 @@ func (cfg *Config) ToJSON() (raw []byte, err error) {
 		}
 	}()
 
-	jcfg := &jsonConfig{
+	jcfg = &jsonConfig{
 		HTTPListenMultiaddress: cfg.HTTPListenAddr.String(),
 		SSLCertFile:            cfg.pathSSLCertFile,
 		SSLKeyFile:             cfg.pathSSLKeyFile,
@@ -373,7 +432,9 @@ func (cfg *Config) ToJSON() (raw []byte, err error) {
 		ReadHeaderTimeout:      cfg.ReadHeaderTimeout.String(),
 		WriteTimeout:           cfg.WriteTimeout.String(),
 		IdleTimeout:            cfg.IdleTimeout.String(),
-		BasicAuthCreds:         cfg.BasicAuthCreds,
+		MaxHeaderBytes:         cfg.MaxHeaderBytes,
+		BasicAuthCredentials:   cfg.BasicAuthCredentials,
+		HTTPLogFile:            cfg.HTTPLogFile,
 		Headers:                cfg.Headers,
 		CORSAllowedOrigins:     cfg.CORSAllowedOrigins,
 		CORSAllowedMethods:     cfg.CORSAllowedMethods,
@@ -397,7 +458,6 @@ func (cfg *Config) ToJSON() (raw []byte, err error) {
 		jcfg.Libp2pListenMultiaddress = cfg.Libp2pListenAddr.String()
 	}
 
-	raw, err = config.DefaultJSONMarshal(jcfg)
 	return
 }
 

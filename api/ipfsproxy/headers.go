@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/version"
+	"github.com/ipfs/ipfs-cluster/version"
 )
 
 // This file has the collection of header-related functions

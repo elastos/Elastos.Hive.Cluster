@@ -10,15 +10,15 @@ import (
 
 	"time"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/adder"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
+	"github.com/ipfs/ipfs-cluster/adder"
+	"github.com/ipfs/ipfs-cluster/api"
 
 	humanize "github.com/dustin/go-humanize"
 	cid "github.com/ipfs/go-cid"
 	ipld "github.com/ipfs/go-ipld-format"
 	logging "github.com/ipfs/go-log"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	rpc "github.com/libp2p/go-libp2p-gorpc"
-	peer "github.com/libp2p/go-libp2p-peer"
 )
 
 var errNotFound = errors.New("dagservice: block not found")
@@ -71,17 +71,7 @@ func (dgs *DAGService) Add(ctx context.Context, node ipld.Node) error {
 		return nil
 	}
 
-	size, err := node.Size()
-	if err != nil {
-		return err
-	}
-	nodeSerial := &api.NodeWithMeta{
-		Cid:     node.Cid().String(),
-		Data:    node.RawData(),
-		CumSize: size,
-	}
-
-	return dgs.ingestBlock(ctx, nodeSerial)
+	return dgs.ingestBlock(ctx, node)
 }
 
 // Finalize finishes sharding, creates the cluster DAG and pins it along
@@ -102,7 +92,7 @@ func (dgs *DAGService) Finalize(ctx context.Context, dataRoot cid.Cid) (cid.Cid,
 	}
 
 	// PutDAG to ourselves
-	err = putDAG(ctx, dgs.rpcClient, clusterDAGNodes, []peer.ID{""})
+	err = adder.NewBlockAdder(dgs.rpcClient, []peer.ID{""}).AddMany(ctx, clusterDAGNodes)
 	if err != nil {
 		return dataRoot, err
 	}
@@ -111,7 +101,7 @@ func (dgs *DAGService) Finalize(ctx context.Context, dataRoot cid.Cid) (cid.Cid,
 
 	dgs.sendOutput(&api.AddedOutput{
 		Name: fmt.Sprintf("%s-clusterDAG", dgs.pinOpts.Name),
-		Cid:  clusterDAG.String(),
+		Cid:  clusterDAG,
 		Size: dgs.totalSize,
 	})
 
@@ -122,7 +112,7 @@ func (dgs *DAGService) Finalize(ctx context.Context, dataRoot cid.Cid) (cid.Cid,
 	clusterDAGPin.MaxDepth = 0 // pin direct
 	clusterDAGPin.Name = fmt.Sprintf("%s-clusterDAG", dgs.pinOpts.Name)
 	clusterDAGPin.Type = api.ClusterDAGType
-	clusterDAGPin.Reference = dataRoot
+	clusterDAGPin.Reference = &dataRoot
 	err = adder.Pin(ctx, dgs.rpcClient, clusterDAGPin)
 	if err != nil {
 		return dataRoot, err
@@ -131,7 +121,7 @@ func (dgs *DAGService) Finalize(ctx context.Context, dataRoot cid.Cid) (cid.Cid,
 	// Pin the META pin
 	metaPin := api.PinWithOpts(dataRoot, dgs.pinOpts)
 	metaPin.Type = api.MetaType
-	metaPin.Reference = clusterDAG
+	metaPin.Reference = &clusterDAG
 	metaPin.MaxDepth = 0 // irrelevant. Meta-pins are not pinned
 	err = adder.Pin(ctx, dgs.rpcClient, metaPin)
 	if err != nil {
@@ -164,7 +154,7 @@ func (dgs *DAGService) Finalize(ctx context.Context, dataRoot cid.Cid) (cid.Cid,
 
 // ingests a block to the current shard. If it get's full, it
 // Flushes the shard and retries with a new one.
-func (dgs *DAGService) ingestBlock(ctx context.Context, n *api.NodeWithMeta) error {
+func (dgs *DAGService) ingestBlock(ctx context.Context, n ipld.Node) error {
 	shard := dgs.currentShard
 
 	// if we have no currentShard, create one
@@ -178,22 +168,20 @@ func (dgs *DAGService) ingestBlock(ctx context.Context, n *api.NodeWithMeta) err
 		dgs.currentShard = shard
 	}
 
-	logger.Debugf("ingesting block %s in shard %d (%s)", n.Cid, len(dgs.shards), dgs.pinOpts.Name)
+	logger.Debugf("ingesting block %s in shard %d (%s)", n.Cid(), len(dgs.shards), dgs.pinOpts.Name)
 
-	c, err := cid.Decode(n.Cid)
-	if err != nil {
-		return err
-	}
+	// this is not same as n.Size()
+	size := uint64(len(n.RawData()))
 
 	// add the block to it if it fits and return
-	if shard.Size()+n.Size() < shard.Limit() {
-		shard.AddLink(ctx, c, n.Size())
-		return adder.PutBlock(ctx, dgs.rpcClient, n, shard.Allocations())
+	if shard.Size()+size < shard.Limit() {
+		shard.AddLink(ctx, n.Cid(), size)
+		return dgs.currentShard.ba.Add(ctx, n)
 	}
 
 	logger.Debugf("shard %d full: block: %d. shard: %d. limit: %d",
 		len(dgs.shards),
-		n.Size(),
+		size,
 		shard.Size(),
 		shard.Limit(),
 	)
@@ -207,7 +195,7 @@ func (dgs *DAGService) ingestBlock(ctx context.Context, n *api.NodeWithMeta) err
 		return errors.New("block doesn't fit in empty shard: shard size too small?")
 	}
 
-	_, err = dgs.flushCurrentShard(ctx)
+	_, err := dgs.flushCurrentShard(ctx)
 	if err != nil {
 		return err
 	}
@@ -270,7 +258,7 @@ func (dgs *DAGService) flushCurrentShard(ctx context.Context) (cid.Cid, error) {
 	dgs.currentShard = nil
 	dgs.sendOutput(&api.AddedOutput{
 		Name: fmt.Sprintf("shard-%d", lens),
-		Cid:  shardCid.String(),
+		Cid:  shardCid,
 		Size: shard.Size(),
 	})
 

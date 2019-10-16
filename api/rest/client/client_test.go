@@ -6,16 +6,17 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api/rest"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/test"
+	"github.com/ipfs/ipfs-cluster/api/rest"
+	"github.com/ipfs/ipfs-cluster/test"
 
 	libp2p "github.com/libp2p/go-libp2p"
-	peer "github.com/libp2p/go-libp2p-peer"
+	peer "github.com/libp2p/go-libp2p-core/peer"
 	pnet "github.com/libp2p/go-libp2p-pnet"
 	ma "github.com/multiformats/go-multiaddr"
 )
 
 func testAPI(t *testing.T) *rest.API {
+	ctx := context.Background()
 	//logging.SetDebugLogging()
 	apiMAddr, _ := ma.NewMultiaddr("/ip4/127.0.0.1/tcp/0")
 
@@ -37,7 +38,7 @@ func testAPI(t *testing.T) *rest.API {
 		t.Fatal(err)
 	}
 
-	rest, err := rest.NewAPIWithHost(cfg, h)
+	rest, err := rest.NewAPIWithHost(ctx, cfg, h)
 	if err != nil {
 		t.Fatal("should be able to create a new Api: ", err)
 	}
@@ -47,7 +48,8 @@ func testAPI(t *testing.T) *rest.API {
 }
 
 func shutdown(a *rest.API) {
-	a.Shutdown()
+	ctx := context.Background()
+	a.Shutdown(ctx)
 	a.Host().Close()
 }
 
@@ -60,7 +62,7 @@ func apiMAddr(a *rest.API) ma.Multiaddr {
 }
 
 func peerMAddr(a *rest.API) ma.Multiaddr {
-	ipfsAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/ipfs/%s", peer.IDB58Encode(a.Host().ID())))
+	ipfsAddr, _ := ma.NewMultiaddr(fmt.Sprintf("/p2p/%s", peer.IDB58Encode(a.Host().ID())))
 	for _, a := range a.Host().Addrs() {
 		if _, err := a.ValueForProtocol(ma.P_IP4); err == nil {
 			return a.Encapsulate(ipfsAddr)
@@ -226,7 +228,7 @@ func TestDNSMultiaddress(t *testing.T) {
 }
 
 func TestPeerAddress(t *testing.T) {
-	peerAddr, _ := ma.NewMultiaddr("/dns4/localhost/tcp/1234/ipfs/QmP7R7gWEnruNePxmCa9GBa4VmUNexLVnb1v47R8Gyo3LP")
+	peerAddr, _ := ma.NewMultiaddr("/dns4/localhost/tcp/1234/p2p/QmP7R7gWEnruNePxmCa9GBa4VmUNexLVnb1v47R8Gyo3LP")
 	cfg := &Config{
 		APIAddr:           peerAddr,
 		Host:              "localhost",
@@ -264,7 +266,8 @@ func TestProxyAddress(t *testing.T) {
 }
 
 func TestIPFS(t *testing.T) {
-	ipfsMock := test.NewIpfsMock()
+	ctx := context.Background()
+	ipfsMock := test.NewIpfsMock(t)
 	defer ipfsMock.Close()
 
 	proxyAddr, err := ma.NewMultiaddr(
@@ -284,9 +287,9 @@ func TestIPFS(t *testing.T) {
 		t.Fatal(err)
 	}
 	dc := c.(*defaultClient)
-	ipfs := dc.IPFS()
+	ipfs := dc.IPFS(ctx)
 
-	err = ipfs.Pin(test.TestCid1)
+	err = ipfs.Pin(test.Cid1.String())
 	if err != nil {
 		t.Error(err)
 	}
@@ -296,7 +299,7 @@ func TestIPFS(t *testing.T) {
 		t.Error(err)
 	}
 
-	pin, ok := pins[test.TestCid1]
+	pin, ok := pins[test.Cid1.String()]
 	if !ok {
 		t.Error("pin should be in pin list")
 	}

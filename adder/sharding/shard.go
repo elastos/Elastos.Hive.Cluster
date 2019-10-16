@@ -4,13 +4,14 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/adder"
-	"github.com/elastos/Elastos.NET.Hive.Cluster/api"
+	"github.com/ipfs/ipfs-cluster/adder"
+	"github.com/ipfs/ipfs-cluster/api"
+
+	cid "github.com/ipfs/go-cid"
+	peer "github.com/libp2p/go-libp2p-core/peer"
+	rpc "github.com/libp2p/go-libp2p-gorpc"
 
 	humanize "github.com/dustin/go-humanize"
-	cid "github.com/ipfs/go-cid"
-	rpc "github.com/libp2p/go-libp2p-gorpc"
-	peer "github.com/libp2p/go-libp2p-peer"
 )
 
 // a shard represents a set of blocks (or bucket) which have been assigned
@@ -20,6 +21,7 @@ type shard struct {
 	rpc         *rpc.Client
 	allocations []peer.ID
 	pinOptions  api.PinOptions
+	ba          *adder.BlockAdder
 	// dagNode represents a node with links and will be converted
 	// to Cbor.
 	dagNode     map[string]cid.Cid
@@ -49,6 +51,7 @@ func newShard(ctx context.Context, rpc *rpc.Client, opts api.PinOptions) (*shard
 		rpc:         rpc,
 		allocations: allocs,
 		pinOptions:  opts,
+		ba:          adder.NewBlockAdder(rpc, allocs),
 		dagNode:     make(map[string]cid.Cid),
 		currentSize: 0,
 		sizeLimit:   opts.ShardSize,
@@ -81,7 +84,7 @@ func (sh *shard) Flush(ctx context.Context, shardN int, prev cid.Cid) (cid.Cid, 
 		return cid.Undef, err
 	}
 
-	err = putDAG(ctx, sh.rpc, nodes, sh.allocations)
+	err = sh.ba.AddMany(ctx, nodes)
 	if err != nil {
 		return cid.Undef, err
 	}
@@ -92,7 +95,7 @@ func (sh *shard) Flush(ctx context.Context, shardN int, prev cid.Cid) (cid.Cid, 
 	// this sets allocations as priority allocation
 	pin.Allocations = sh.allocations
 	pin.Type = api.ShardType
-	pin.Reference = prev
+	pin.Reference = &prev
 	pin.MaxDepth = 1
 	pin.ShardSize = sh.Size()           // use current size, not the limit
 	if len(nodes) > len(sh.dagNode)+1 { // using an indirect graph

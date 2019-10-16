@@ -4,14 +4,17 @@ import (
 	"encoding/json"
 	"errors"
 
-	"github.com/elastos/Elastos.NET.Hive.Cluster/config"
+	"github.com/kelseyhightower/envconfig"
+
+	"github.com/ipfs/ipfs-cluster/config"
 )
 
 const configKey = "maptracker"
+const envConfigKey = "cluster_maptracker"
 
 // Default values for this Config.
 const (
-	DefaultMaxPinQueueSize = 50000
+	DefaultMaxPinQueueSize = 1000000
 	DefaultConcurrentPins  = 10
 )
 
@@ -28,7 +31,7 @@ type Config struct {
 }
 
 type jsonConfig struct {
-	MaxPinQueueSize int `json:"max_pin_queue_size"`
+	MaxPinQueueSize int `json:"max_pin_queue_size,omitempty"`
 	ConcurrentPins  int `json:"concurrent_pins"`
 }
 
@@ -44,6 +47,19 @@ func (cfg *Config) Default() error {
 	return nil
 }
 
+// ApplyEnvVars fills in any Config fields found
+// as environment variables.
+func (cfg *Config) ApplyEnvVars() error {
+	jcfg := cfg.toJSONConfig()
+
+	err := envconfig.Process(envConfigKey, jcfg)
+	if err != nil {
+		return err
+	}
+
+	return cfg.applyJSONConfig(jcfg)
+}
+
 // Validate checks that the fields of this Config have working values,
 // at least in appearance.
 func (cfg *Config) Validate() error {
@@ -54,6 +70,7 @@ func (cfg *Config) Validate() error {
 	if cfg.ConcurrentPins <= 0 {
 		return errors.New("maptracker.concurrent_pins is too low")
 	}
+
 	return nil
 }
 
@@ -69,6 +86,10 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 
 	cfg.Default()
 
+	return cfg.applyJSONConfig(jcfg)
+}
+
+func (cfg *Config) applyJSONConfig(jcfg *jsonConfig) error {
 	config.SetIfNotDefault(jcfg.MaxPinQueueSize, &cfg.MaxPinQueueSize)
 	config.SetIfNotDefault(jcfg.ConcurrentPins, &cfg.ConcurrentPins)
 
@@ -77,10 +98,18 @@ func (cfg *Config) LoadJSON(raw []byte) error {
 
 // ToJSON generates a human-friendly JSON representation of this Config.
 func (cfg *Config) ToJSON() ([]byte, error) {
-	jcfg := &jsonConfig{}
-
-	jcfg.MaxPinQueueSize = cfg.MaxPinQueueSize
-	jcfg.ConcurrentPins = cfg.ConcurrentPins
+	jcfg := cfg.toJSONConfig()
 
 	return config.DefaultJSONMarshal(jcfg)
+}
+
+func (cfg *Config) toJSONConfig() *jsonConfig {
+	jCfg := &jsonConfig{
+		ConcurrentPins: cfg.ConcurrentPins,
+	}
+	if cfg.MaxPinQueueSize != DefaultMaxPinQueueSize {
+		jCfg.MaxPinQueueSize = cfg.MaxPinQueueSize
+	}
+
+	return jCfg
 }

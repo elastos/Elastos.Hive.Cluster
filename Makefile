@@ -1,85 +1,52 @@
-deptools=deptools
 sharness = sharness/lib/sharness
-gx=$(deptools)/gx
-gx-go=$(deptools)/gx-go
 
-# For debugging
-problematic_test = TestClustersReplicationRealloc
-
-export PATH := $(deptools):$(PATH)
+export GO111MODULE := on
 
 all: build
 clean: rwundo clean_sharness
 	$(MAKE) -C cmd/ipfs-cluster-service clean
 	$(MAKE) -C cmd/ipfs-cluster-ctl clean
 	@rm -rf ./test/testingData
+	@rm -rf ./compose
 
-install: deps
+install:
 	$(MAKE) -C cmd/ipfs-cluster-service install
 	$(MAKE) -C cmd/ipfs-cluster-ctl install
 
-docker_install: docker_deps
-	$(MAKE) -C cmd/ipfs-cluster-service install
-	$(MAKE) -C cmd/ipfs-cluster-ctl install
-
-build: deps
+build:
 	go build -ldflags "-X ipfscluster.Commit=$(shell git rev-parse HEAD)"
 	$(MAKE) -C cmd/ipfs-cluster-service build
 	$(MAKE) -C cmd/ipfs-cluster-ctl build
 
-service: deps
+service:
 	$(MAKE) -C cmd/ipfs-cluster-service ipfs-cluster-service
-ctl: deps
+ctl:
 	$(MAKE) -C cmd/ipfs-cluster-ctl ipfs-cluster-ctl
-
-gx-clean: clean
-	$(MAKE) -C $(deptools) gx-clean
-
-gx:
-	$(MAKE) -C $(deptools) gx
-
-deps: gx
-	$(gx) install --global
-	$(gx-go) rewrite
-
-# Run this target before building the docker image 
-# and then gx won't attempt to pull all deps 
-# from the network each time
-docker_deps: gx
-	$(gx) install --local
-	$(gx-go) rewrite
 
 check:
 	go vet ./...
 	golint -set_exit_status -min_confidence 0.3 ./...
 
-test: deps
+test:
 	go test -v ./...
 
 test_sharness: $(sharness)
 	@sh sharness/run-sharness-tests.sh
 
-test_problem: deps
+test_problem:
 	go test -timeout 20m -loglevel "DEBUG" -v -run $(problematic_test)
 
 $(sharness):
 	@echo "Downloading sharness"
-	@curl -L -s -o sharness/lib/sharness.tar.gz http://github.com/chriscool/sharness/archive/master.tar.gz
+	@curl -L -s -o sharness/lib/sharness.tar.gz http://github.com/chriscool/sharness/archive/28c7490f5cdf1e95a8ebebf8b06ed5588db13875.tar.gz
 	@cd sharness/lib; tar -zxf sharness.tar.gz; cd ../..
-	@mv sharness/lib/sharness-master sharness/lib/sharness
+	@mv sharness/lib/sharness-28c7490f5cdf1e95a8ebebf8b06ed5588db13875 sharness/lib/sharness
 	@rm sharness/lib/sharness.tar.gz
 
 clean_sharness:
 	@rm -rf ./sharness/test-results
 	@rm -rf ./sharness/lib/sharness
 	@rm -rf sharness/trash\ directory*
-
-rw: gx
-	$(gx-go) rewrite
-rwundo: gx
-	$(gx-go) rewrite --undo
-publish: rwundo
-	$(gx) publish
 
 docker:
 	docker build -t cluster-image -f Dockerfile .
@@ -95,12 +62,14 @@ docker:
 
 
 docker-compose:
+	mkdir -p compose/ipfs0 compose/ipfs1 compose/cluster0 compose/cluster1
+	chmod -R 0777 compose
 	CLUSTER_SECRET=$(shell od -vN 32 -An -tx1 /dev/urandom | tr -d ' \n') docker-compose up -d
-	sleep 20
-	docker exec cluster0 ipfs-cluster-ctl peers ls | grep -o "Sees 1 other peers" | uniq -c | grep 2
-	docker exec cluster1 ipfs-cluster-ctl peers ls | grep -o "Sees 1 other peers" | uniq -c | grep 2
+	sleep 35
+	docker exec cluster0 ipfs-cluster-ctl peers ls | grep -o "Sees 2 other peers" | uniq -c | grep 3
+	docker exec cluster1 ipfs-cluster-ctl peers ls | grep -o "Sees 2 other peers" | uniq -c | grep 3
 	docker-compose down
 
-prcheck: deps check service ctl test
+prcheck: check service ctl test
 
-.PHONY: all gx deps test test_sharness clean_sharness rw rwundo publish service ctl install clean gx-clean docker
+.PHONY: all test test_sharness clean_sharness rw rwundo publish service ctl install clean docker
