@@ -1893,10 +1893,8 @@ func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 // Get newest QmHash for uid of the member of this Cluster.
 func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error) {
 	curkey, _ := c.FindQmHash(uid);
-	logger.Info("curkey  PeerID: " + fmt.Sprintf("%s", curkey.PeerID))
-	logger.Info("curkey     uid: " + curkey.UID)
-	logger.Info("curkey    root: " + curkey.Root)
-	logger.Info("curkey     key: " + fmt.Sprintf("%d", curkey.Key))
+	logger.Info("PeerID: " + fmt.Sprintf("%s", curkey.PeerID))
+	logger.Info("curUID: " + curkey.UID+" root: " + curkey.Root +" key: " + fmt.Sprintf("%d", curkey.Key))
 
 	otherUidkey := api.UIDKey{}
 	// Get newest QmHash
@@ -1936,10 +1934,8 @@ func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error)
 				otherUidkey.Key = peersUID[i].Key
 			}
 
-			logger.Info("peersUID PeerID: " + fmt.Sprintf("%s", peersUID[i].PeerID))
-			logger.Info("peersUID    uid: " + peersUID[i].UID)
-			logger.Info("peersUID   root: " + peersUID[i].Root)
-			logger.Info("peersUID    key: " + fmt.Sprintf("%d", peersUID[i].Key))
+			logger.Info("Peer  ID: " + fmt.Sprintf("%s", peersUID[i].PeerID))
+			logger.Info("peersUID: " + peersUID[i].UID+" root: " + peersUID[i].Root +" key: " + fmt.Sprintf("%d", peersUID[i].Key))
 		}
 	}
 
