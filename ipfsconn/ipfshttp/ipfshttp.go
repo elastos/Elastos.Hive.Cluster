@@ -942,12 +942,6 @@ func (ipfs *Connector) UidNew(ctx context.Context, name string) (api.UIDSecret, 
 	ctx, cancel := context.WithTimeout(ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
 	secret := api.UIDSecret{}
-	//url := "key/gen?arg=" + name + "&type=rsa"
-	//res, err := ipfs.postCtx(ctx, url, "", nil)
-	//if err != nil {
-	//	logger.Error(err)
-	//	return secret, err
-	//}
 
 	url := "files/mkdir?arg=/nodes/" + name + "&parents=true"
 	_, err := ipfs.postCtx(ctx, url, "", nil)
@@ -956,15 +950,7 @@ func (ipfs *Connector) UidNew(ctx context.Context, name string) (api.UIDSecret, 
 		return secret, err
 	}
 
-	//var keyGen ipfsKeyGenResp
-	//err = json.Unmarshal(res, &keyGen)
-	//if err != nil {
-	//	logger.Error(err)
-	//	return secret, err
-	//}
-
 	secret.UID = name
-	secret.PeerID = "peerid"
 
 	return secret, nil
 }

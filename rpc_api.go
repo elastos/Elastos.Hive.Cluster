@@ -621,8 +621,11 @@ func (rpcapi *PeerMonitorRPCAPI) LatestMetrics(ctx context.Context, in string, o
 
 // UidNew runs IPFSConnector.UidNew().
 func (rpcapi *ClusterRPCAPI) UidNew(ctx context.Context, in string, out *api.UIDSecret) error {
-	res, err := rpcapi.c.ipfs.UidNew(ctx, in)
-	*out = res
+	uidsecret := api.UIDSecret{}
+	uidsecret, err := rpcapi.c.ipfs.UidNew(ctx, in)
+
+	uidsecret.PeerID = rpcapi.c.id.String()
+	*out = uidsecret
 	return err
 }
 

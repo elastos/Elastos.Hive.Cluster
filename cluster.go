@@ -1943,17 +1943,21 @@ func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 
 // Get newest QmHash for uid of the member of this Cluster.
 func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error) {
-	curkey, _ := c.FindQmHash(uid);
-	logger.Info("PeerID: " + fmt.Sprintf("%s", curkey.PeerID))
-	logger.Info("curUID: " + curkey.UID+" ,Root: " + curkey.Root +" ,Time: " + fmt.Sprintf("%s", curkey.Time))
+	lastUidkey, err := c.FindQmHash(uid);
+	if err != nil {
+		//没有找到最新的UID目录，确保登录成功后有一个存在的UID目录
+		c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
+	}
 
-	lastUidkey := api.UIDKey{}
+	logger.Info("PeerID: " + fmt.Sprintf("%s", lastUidkey.PeerID))
+	logger.Info("curUID: " + lastUidkey.UID+" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
+
 	// Get newest QmHash
 	members, err := c.consensus.Peers(ctx)
 	if err != nil {
 		logger.Error(err)
 		logger.Error("an empty list of peers will be returned")
-		return curkey, nil
+		return lastUidkey, nil
 	}
 	lenMembers := len(members)
 
@@ -1979,10 +1983,11 @@ func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error)
 
 		if err == nil {
 			// check newest  key  比较这个文件最后的更新时间
-			if peersUID[i].Time > curkey.Time {
-				lastUidkey.UID = peersUID[i].UID
-				lastUidkey.Root = peersUID[i].Root
-				lastUidkey.Time = peersUID[i].Time
+			if peersUID[i].Time > lastUidkey.Time {
+				lastUidkey.UID    = peersUID[i].UID
+				lastUidkey.Root   = peersUID[i].Root
+				lastUidkey.Time   = peersUID[i].Time
+				lastUidkey.PeerID = peersUID[i].PeerID
 			}
 
 			logger.Info("PeerID: " + fmt.Sprintf("%s", peersUID[i].PeerID))
@@ -1990,23 +1995,19 @@ func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error)
 		}
 	}
 
-	if lastUidkey.UID != "" && lastUidkey.Root != curkey.Root {
+	if lastUidkey.UID != "" && lastUidkey.PeerID != c.id {
 		if lastUidkey.Root != ""  {
 			c.ipfs.FilesRm([]string{lastUidkey.UID, "", "true"})
+			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
 			logger.Info("peeUID: " + lastUidkey.UID+" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
 			err = c.ipfs.FilesCp([]string{lastUidkey.UID, "/ipfs/" + lastUidkey.Root, ""})
 			if err != nil {
 				logger.Error(err)
 			}
 		}
-		return lastUidkey, err
 	}
 
-	//没有找到最新的UID目录，确保登录成功后有一个存在的UID目录
-	if curkey.Root == "" {
-		c.ipfs.FilesMkdir([]string{curkey.UID, "", "true"})
-	}
 
-	return curkey, err
+	return lastUidkey, err
 }
 
