@@ -1,10 +1,16 @@
 package ipfscluster
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"mime/multipart"
+	"os/exec"
+	"strings"
+	"runtime"
+
+	//"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -18,18 +24,18 @@ import (
 	"github.com/ipfs/ipfs-cluster/state"
 	"github.com/ipfs/ipfs-cluster/version"
 
-	cid "github.com/ipfs/go-cid"
+	"github.com/ipfs/go-cid"
 	ds "github.com/ipfs/go-datastore"
-	host "github.com/libp2p/go-libp2p-core/host"
-	peer "github.com/libp2p/go-libp2p-core/peer"
-	peerstore "github.com/libp2p/go-libp2p-core/peerstore"
+	"github.com/libp2p/go-libp2p-core/host"
+	"github.com/libp2p/go-libp2p-core/peer"
+	"github.com/libp2p/go-libp2p-core/peerstore"
 	rpc "github.com/libp2p/go-libp2p-gorpc"
 	dht "github.com/libp2p/go-libp2p-kad-dht"
 	"github.com/libp2p/go-libp2p/p2p/discovery"
 	ma "github.com/multiformats/go-multiaddr"
 
 	ocgorpc "github.com/lanzafame/go-libp2p-ocgorpc"
-	trace "go.opencensus.io/trace"
+	"go.opencensus.io/trace"
 )
 
 // ReadyTimeout specifies the time before giving up
@@ -1875,18 +1881,63 @@ func diffPeers(peers1, peers2 []peer.ID) (added, removed []peer.ID) {
 	return
 }
 
+func checkErr(err error) {
+	if err != nil {
+		fmt.Println(err)
+		panic(err)
+	}
+}
+
+//阻塞式的执行外部shell命令的函数,等待执行完毕并返回标准输出
+func exec_shell(s string) (string, error){
+	var out bytes.Buffer
+	//函数返回一个*Cmd，用于使用给出的参数执行name指定的程序
+    if runtime.GOOS == "windows" {
+        cmd := exec.Command("cmd", "/C", s)
+        cmd.Stdout = &out
+	    err := cmd.Run()
+
+	    checkErr(err)
+	    return out.String(), err
+    } else {
+        cmd := exec.Command("/bin/bash", "-c", s)
+        cmd.Stdout = &out
+	    err := cmd.Run()
+	    checkErr(err)
+	    return out.String(), err
+    }
+}
+
 // FindKey finds user key from IFPS keystore
 func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 	uidkey := api.UIDKey{}
 	uidkey.UID = uid
 	uidkey.PeerID = c.id
 
+	//读取UID目录的Qm-hash
 	stat, err := c.ipfs.FilesStat([]string{uid, "", "", "", "", ""})
-	if err == nil {
-		uidkey.Root = stat.Hash
-		uidkey.Key = stat.CumulativeSize
+	if err != nil {
+		return uidkey, nil
 	}
 
+	uidkey.Root = stat.Hash
+	if uidkey.Root != "" {
+		//确保文件一定存在目录的更新时间
+		stat2, err2 := c.ipfs.FilesStat([]string{uid + "/time.txt", "", "", "", "", ""})
+		if err2 != nil {
+			return uidkey, nil
+		}
+		if stat2.Hash != "" {
+			var cmd = " ipfs files read /nodes/" + uid + "/time.txt"
+			out, err := exec_shell(cmd)
+			if err == nil {
+				uidkey.Time = strings.ReplaceAll(out, "\r\n", "");
+				uidkey.Time = strings.ReplaceAll(uidkey.Time, " ", "");
+			}
+		}
+	}
+
+	//返回默认值
 	return uidkey, nil
 }
 
@@ -1894,9 +1945,9 @@ func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error) {
 	curkey, _ := c.FindQmHash(uid);
 	logger.Info("PeerID: " + fmt.Sprintf("%s", curkey.PeerID))
-	logger.Info("curUID: " + curkey.UID+" root: " + curkey.Root +" key: " + fmt.Sprintf("%d", curkey.Key))
+	logger.Info("curUID: " + curkey.UID+" ,Root: " + curkey.Root +" ,Time: " + fmt.Sprintf("%s", curkey.Time))
 
-	otherUidkey := api.UIDKey{}
+	lastUidkey := api.UIDKey{}
 	// Get newest QmHash
 	members, err := c.consensus.Peers(ctx)
 	if err != nil {
@@ -1928,26 +1979,27 @@ func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error)
 
 		if err == nil {
 			// check newest  key  比较这个文件最后的更新时间
-			if peersUID[i].Key > curkey.Key {
-				otherUidkey.UID = peersUID[i].UID
-				otherUidkey.Root = peersUID[i].Root
-				otherUidkey.Key = peersUID[i].Key
+			if peersUID[i].Time > curkey.Time {
+				lastUidkey.UID = peersUID[i].UID
+				lastUidkey.Root = peersUID[i].Root
+				lastUidkey.Time = peersUID[i].Time
 			}
 
-			logger.Info("Peer  ID: " + fmt.Sprintf("%s", peersUID[i].PeerID))
-			logger.Info("peersUID: " + peersUID[i].UID+" root: " + peersUID[i].Root +" key: " + fmt.Sprintf("%d", peersUID[i].Key))
+			logger.Info("PeerID: " + fmt.Sprintf("%s", peersUID[i].PeerID))
+			logger.Info("peeUID: " + peersUID[i].UID+" ,Root: " + peersUID[i].Root +" ,Time: " + fmt.Sprintf("%s", peersUID[i].Time))
 		}
 	}
 
-	if otherUidkey.UID != "" && otherUidkey.Root != curkey.Root {
-		if otherUidkey.Root != ""  {
-			c.ipfs.FilesRm([]string{otherUidkey.UID, "", "true"})
-			err = c.ipfs.FilesCp([]string{otherUidkey.UID, "/ipfs/" + otherUidkey.Root, ""})
+	if lastUidkey.UID != "" && lastUidkey.Root != curkey.Root {
+		if lastUidkey.Root != ""  {
+			c.ipfs.FilesRm([]string{lastUidkey.UID, "", "true"})
+			logger.Info("peeUID: " + lastUidkey.UID+" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
+			err = c.ipfs.FilesCp([]string{lastUidkey.UID, "/ipfs/" + lastUidkey.Root, ""})
 			if err != nil {
 				logger.Error(err)
 			}
 		}
-		return otherUidkey, err
+		return lastUidkey, err
 	}
 
 	//没有找到最新的UID目录，确保登录成功后有一个存在的UID目录

@@ -15,20 +15,22 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"runtime"
 
 	"github.com/ipfs/ipfs-cluster/adder/adderutils"
 	"github.com/ipfs/ipfs-cluster/api"
 	"github.com/ipfs/ipfs-cluster/rpcutil"
 
-	mux "github.com/gorilla/mux"
-	cid "github.com/ipfs/go-cid"
+	"github.com/gorilla/mux"
+	"github.com/ipfs/go-cid"
 	logging "github.com/ipfs/go-log"
-	path "github.com/ipfs/go-path"
-	peer "github.com/libp2p/go-libp2p-core/peer"
+	"github.com/ipfs/go-path"
+	"github.com/libp2p/go-libp2p-core/peer"
 	rpc "github.com/libp2p/go-libp2p-gorpc"
 	madns "github.com/multiformats/go-multiaddr-dns"
 	manet "github.com/multiformats/go-multiaddr-net"
@@ -751,13 +753,6 @@ func (proxy *Server) uidNewHandler(w http.ResponseWriter, r *http.Request) {
 
 	name := q.Get("uid")
 
-	//randName, err := uuid.NewV4()
-	//if err != nil {
-	//	ipfsErrorResponder(w, err.Error())
-	//	return
-	//}
-	//name := "uid-" + randName.String()
-
 	if(name == ""){
 		uuidname ,err2 := uuid.NewRandom()
 		name = "uid-" + uuidname.String()
@@ -774,6 +769,12 @@ func (proxy *Server) uidNewHandler(w http.ResponseWriter, r *http.Request) {
 		name,
 		&UIDSecret,
 	)
+	if err != nil {
+		ipfsErrorResponder(w, err.Error(), -1)
+		return
+	}
+
+	err = proxy.uidSpawn(name)
 	if err != nil {
 		ipfsErrorResponder(w, err.Error(), -1)
 		return
@@ -799,24 +800,20 @@ func (proxy *Server) uidLoginHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	hash := q.Get("hash")
-	//if hash == "" {
-	//	ipfsErrorResponder(w, "Missing hash : error reading request: "+r.URL.String(), -1)
-	//	return
-	//}
 
-	err := proxy.uidSpawn(uid)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
-		return
-	}
-
-	err = proxy.rpcClient.Call(
+	err := proxy.rpcClient.Call(
 		"",
 		"Cluster",
 		"UidLogin",
 		[]string{uid, hash},
 		&UIDKey,
 	)
+	if err != nil {
+		ipfsErrorResponder(w, err.Error(), -1)
+		return
+	}
+
+	err = proxy.uidSpawn(uid)
 	if err != nil {
 		ipfsErrorResponder(w, err.Error(), -1)
 		return
@@ -1024,18 +1021,12 @@ func (proxy *Server) filesLsHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := proxy.uidSpawn(uid)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
-		return
-	}
-
 	path := q.Get("path")
 	if path == "" {
 		path = "/"
 	}
 
-	err = proxy.rpcClient.Call(
+	err := proxy.rpcClient.Call(
 		"",
 		"Cluster",
 		"IPFSFilesLs",
@@ -1064,15 +1055,17 @@ func (proxy *Server) filesMkdirHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := proxy.uidSpawn(uid)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
-		return
-	}
-
 	path := q.Get("path")
 	if path == "" {
 		path = "/"
+	}
+
+	if path != "/" {
+		err2 := proxy.uidSpawn(uid)
+		if err2 != nil {
+			ipfsErrorResponder(w, err2.Error(), -1)
+			return
+		}
 	}
 
 	parents := q.Get("parents")
@@ -1080,7 +1073,7 @@ func (proxy *Server) filesMkdirHandler(w http.ResponseWriter, r *http.Request) {
 		parents = "false"
 	}
 
-	err = proxy.rpcClient.Call(
+	err := proxy.rpcClient.Call(
 		"",
 		"Cluster",
 		"IPFSFilesMkdir",
@@ -1152,12 +1145,6 @@ func (proxy *Server) filesReadHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := proxy.uidSpawn(uid)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
-		return
-	}
-
 	path := q.Get("path")
 	if path == "" {
 		ipfsErrorResponder(w, "error reading request: "+r.URL.String(), -1)
@@ -1167,7 +1154,7 @@ func (proxy *Server) filesReadHandler(w http.ResponseWriter, r *http.Request) {
 	offset := q.Get("offset")
 	count := q.Get("count")
 
-	err = proxy.rpcClient.Call(
+	err := proxy.rpcClient.Call(
 		"",
 		"Cluster",
 		"IPFSFilesRead",
@@ -1245,12 +1232,6 @@ func (proxy *Server) filesStatHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := proxy.uidSpawn(uid)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
-		return
-	}
-
 	path := q.Get("path")
 	if path == "" {
 		ipfsErrorResponder(w, "error reading request: "+r.URL.String(), -1)
@@ -1262,7 +1243,7 @@ func (proxy *Server) filesStatHandler(w http.ResponseWriter, r *http.Request) {
 	size := q.Get("size")
 	with_local := q.Get("with-local")
 
-	err = proxy.rpcClient.Call(
+	err := proxy.rpcClient.Call(
 		"",
 		"Cluster",
 		"IPFSFilesStat",
@@ -1365,6 +1346,46 @@ func (proxy *Server) filesWriteHandler(w http.ResponseWriter, r *http.Request) {
 	return
 }
 
+func checkErr(err error) {
+	if err != nil {
+		fmt.Println(err)
+		panic(err)
+	}
+}
+
+//阻塞式的执行外部shell命令的函数,等待执行完毕并返回标准输出
+func exec_shell(s string) (string, error){
+	var out bytes.Buffer
+	//函数返回一个*Cmd，用于使用给出的参数执行name指定的程序
+    if runtime.GOOS == "windows" {
+        cmd := exec.Command("cmd", "/C", s)
+        cmd.Stdout = &out
+	    err := cmd.Run()
+
+	    checkErr(err)
+	    return out.String(), err
+    } else {
+        cmd := exec.Command("/bin/bash", "-c", s)
+        cmd.Stdout = &out
+	    err := cmd.Run()
+	    checkErr(err)
+	    return out.String(), err
+    }
+}
+
 func (proxy *Server) uidSpawn(uid string) error {
-	return nil
+	//把timeUnix:=time.Now().Unix() 写入uid目录下的time.txt文件内。每次都替换原来的值
+	err := proxy.rpcClient.Call(
+		"",
+		"Cluster",
+		"IPFSFilesMkdir",
+		[]string{uid, "/", "true"},
+		&struct{}{},
+	)
+
+	var cmd = "echo " + fmt.Sprintf("%v", time.Now().Unix()) + " | ipfs files write --create /nodes/"+uid+"/time.txt"
+
+	_, err = exec_shell(cmd)
+
+	return err
 }

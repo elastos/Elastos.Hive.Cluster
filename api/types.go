@@ -901,9 +901,9 @@ type IPFSRepoStat struct {
 
 // UIDKey wraps secret private key.
 type UIDKey struct {
-	UID  string
-	Key  uint64
-	Root string
+	UID    string
+	Time   string
+	Root   string
 	PeerID peer.ID
 }
 
