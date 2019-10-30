@@ -109,7 +109,8 @@ do
 
         show_steps  "Now Login to Server ${SERVER2}"
         time_start_login_server2=`date +%s.%N`
-        curl "http://${SERVER2}:9095/api/v0/uid/login?uid=${HIVE_UID}&hash=/ipfs/${HOME_HASH}" || show_error "You cannot login ${SERVER2}."
+        #curl "http://${SERVER2}:9095/api/v0/uid/login?uid=${HIVE_UID}&hash=/ipfs/${HOME_HASH}" || show_error "You cannot login ${SERVER2}."
+        curl "http://${SERVER2}:9095/api/v0/uid/login?uid=${HIVE_UID}" || show_error "You cannot login ${SERVER2}."
         time_end_login_server2=`date +%s.%N`
         logs "[Info] Login ${SERVER2} successfully"
             

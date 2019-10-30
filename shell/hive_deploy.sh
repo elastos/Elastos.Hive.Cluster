@@ -1,22 +1,24 @@
 #!/usr/local/bin/expect
 
 set timeout 1000
+
 set host [lindex $argv 0]
 set username [lindex $argv 1]
 set password [lindex $argv 2]
 set src_file [lindex $argv 3]
-set dest_file [lindex $argv 4]
-set is_ctl_peer [lindex $argv 5]
+set is_ctl_peer [lindex $argv 4]
 
-set start_ipfs "/hive/ipfs daemon "
-set start_ipfs-cluster "/hive/ipfs-cluster-service daemon "
+set hivework "/home/$username/hive"
+set start_ipfs "${hivework}/ipfs daemon "
+set start_ipfs-cluster "${hivework}/ipfs-cluster-service daemon "
 set bootstrap "--bootstrap /ip4/10.10.80.101/tcp/9096/p2p/12D3KooWDibm5BGnyaNveXdvDo4LSws5d7XL3Fzk6HpzRazrbZvH"
 
-puts "\n**** hive_deploy.sh for  $host ... ******************************************"
-puts "**** scp  $src_file to $username@$host:$dest_file ******************************"
+
+puts "->${host} start ... "
+puts "-->scp $src_file to $username@$host:/home/$username  "
 
 ## deploy ####
-spawn scp -r $src_file $username@$host:$dest_file
+spawn scp -r "${src_file}" "$username@$host:/home/$username"
 expect {
   "(yew/no)?"
   {
@@ -35,10 +37,8 @@ if { ${host} == "10.10.156.100" } {
 	expect "*#"
 }
 
-puts "**** scp $src_file to $username@$host:$dest_file finished. ***********************"
-
 ## login  ######
-puts "**** start login ${username}@${host} ************************"
+puts "-->login ${username}@${host} "
 spawn ssh ${username}@${host}
 
 expect {
@@ -53,51 +53,42 @@ expect {
   }
 }
 
-if { ${username} != "root" } {
-	expect "*~"
+expect "*~"
 
-	send "su \r"
-	expect "*assword:" {send "$password\n"}
-}
-
-if { ${host} == "10.10.156.100" } {
-    expect "*~]"
-} else {
-	expect "*#"
-}
-puts "**** login $username@$host success, start to exec command ***********************"
+puts "login $username@$host success"
 
 ## run ipfs  ######
-send "/hive/reset.sh \r"
-if { ${host} == "10.10.156.100" } {
-    expect "*~]"
-} else {
-	expect "*#"
-}
+puts "-->run ipfs "
+send "export PATH=\"\$PATH:${hivework}/\" \r"
 
-send "nohup ${start_ipfs}&  \r"
+send "${hivework}/reset.sh \r"
+expect "*~"
+
+send "rm -rf ${hivework}/ipfs_output.log \r"
+expect "*~"
+
+send "nohup ${start_ipfs} >${hivework}/ipfs_output.log 2>&1 &  \r"
 send "\r"
+expect "*~"
 
-if { ${host} == "10.10.156.100" } {
-    expect "*~]"
-} else {
-	expect "*#"
-}
+puts "-->run ipfs-cluster "
+send "rm -rf ${hivework}/ipfs-cluster_output.log \r"
+expect "*~"
 
 if { ${is_ctl_peer} } {
-	send "nohup ${start_ipfs-cluster}& \r"
+	send "nohup ${start_ipfs-cluster} >${hivework}/ipfs-cluster_output.log 2>&1 & \r"
 	send "\r"
+	send "cat  ${hivework}/ipfs-cluster_output.log | grep /ip4/${host}/tcp/9096/ | tail -1 \r"
+	set bootstrap $expect_out(0,string)
+	puts "\n$bootstrap:{bootstrap}"
 } else {
-	send "nohup ${start_ipfs-cluster} ${bootstrap}& \r"
+	send "nohup ${start_ipfs-cluster} ${bootstrap} >${hivework}/ipfs-cluster_output.log 2>&1 & \r"
 	send "\r"
 }
 
-if { ${host} == "10.10.156.100" } {
-    expect "*~]"
-} else {
-	expect "*#"
-}
+expect "*~"
 send "exit \r"
-send "exit \r"
+
+puts "-->$host finished \n\n"
 
 expect eof
