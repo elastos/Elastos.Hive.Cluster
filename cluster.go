@@ -1,15 +1,11 @@
 package ipfscluster
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"mime/multipart"
-	"os/exec"
 	"strings"
-	"runtime"
-
 	//"path/filepath"
 	"sort"
 	"sync"
@@ -1888,26 +1884,6 @@ func checkErr(err error) {
 	}
 }
 
-//阻塞式的执行外部shell命令的函数,等待执行完毕并返回标准输出
-func exec_shell(s string) (string, error){
-	var out bytes.Buffer
-	//函数返回一个*Cmd，用于使用给出的参数执行name指定的程序
-    if runtime.GOOS == "windows" {
-        cmd := exec.Command("cmd", "/C", s)
-        cmd.Stdout = &out
-	    err := cmd.Run()
-
-	    checkErr(err)
-	    return out.String(), err
-    } else {
-        cmd := exec.Command("/bin/bash", "-c", s)
-        cmd.Stdout = &out
-	    err := cmd.Run()
-	    checkErr(err)
-	    return out.String(), err
-    }
-}
-
 // FindKey finds user key from IFPS keystore
 func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 	uidkey := api.UIDKey{}
@@ -1923,18 +1899,13 @@ func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 	uidkey.Root = stat.Hash
 	if uidkey.Root != "" {
 		//确保文件一定存在目录的更新时间
-		stat2, err2 := c.ipfs.FilesStat([]string{uid + "/time.txt", "", "", "", "", ""})
+		stat2, err2 := c.ipfs.FilesRead([]string{uid + "/time.txt", "", "", "", "", ""})
 		if err2 != nil {
 			return uidkey, nil
 		}
-		if stat2.Hash != "" {
-			var cmd = " ipfs files read /nodes/" + uid + "/time.txt"
-			out, err := exec_shell(cmd)
-			if err == nil {
-				uidkey.Time = strings.ReplaceAll(out, "\r\n", "");
-				uidkey.Time = strings.ReplaceAll(uidkey.Time, " ", "");
-			}
-		}
+
+		uidkey.Time = strings.ReplaceAll(string(stat2), "\r\n", "");
+
 	}
 
 	//返回默认值

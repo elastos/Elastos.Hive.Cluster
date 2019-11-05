@@ -6,6 +6,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/ipfs/ipfs-cluster/adder/adderutils"
+	"github.com/ipfs/ipfs-cluster/api"
+	"github.com/ipfs/ipfs-cluster/rpcutil"
 	"github.com/whyrusleeping/tar-utils"
 	"io"
 	"io/ioutil"
@@ -15,16 +18,10 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"os/exec"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
-	"runtime"
-
-	"github.com/ipfs/ipfs-cluster/adder/adderutils"
-	"github.com/ipfs/ipfs-cluster/api"
-	"github.com/ipfs/ipfs-cluster/rpcutil"
 
 	"github.com/gorilla/mux"
 	"github.com/ipfs/go-cid"
@@ -813,12 +810,6 @@ func (proxy *Server) uidLoginHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = proxy.uidSpawn(uid)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
-		return
-	}
-
 	resBytes, _ := json.Marshal(UIDKey)
 	w.WriteHeader(http.StatusOK)
 	w.Write(resBytes)
@@ -1353,26 +1344,6 @@ func checkErr(err error) {
 	}
 }
 
-//阻塞式的执行外部shell命令的函数,等待执行完毕并返回标准输出
-func exec_shell(s string) (string, error){
-	var out bytes.Buffer
-	//函数返回一个*Cmd，用于使用给出的参数执行name指定的程序
-    if runtime.GOOS == "windows" {
-        cmd := exec.Command("cmd", "/C", s)
-        cmd.Stdout = &out
-	    err := cmd.Run()
-
-	    checkErr(err)
-	    return out.String(), err
-    } else {
-        cmd := exec.Command("/bin/bash", "-c", s)
-        cmd.Stdout = &out
-	    err := cmd.Run()
-	    checkErr(err)
-	    return out.String(), err
-    }
-}
-
 func (proxy *Server) uidSpawn(uid string) error {
 	//把timeUnix:=time.Now().Unix() 写入uid目录下的time.txt文件内。每次都替换原来的值
 	err := proxy.rpcClient.Call(
@@ -1383,9 +1354,35 @@ func (proxy *Server) uidSpawn(uid string) error {
 		&struct{}{},
 	)
 
-	var cmd = "echo " + fmt.Sprintf("%v", time.Now().Unix()) + " | ipfs files write --create /nodes/"+uid+"/time.txt"
+	bodyBuf := &bytes.Buffer{}
+	writer := multipart.NewWriter(bodyBuf)
 
-	_, err = exec_shell(cmd)
+	fileWriter, err := writer.CreateFormFile("file", "time.txt")
+	if err != nil {
+		return err
+	}
+     var time = fmt.Sprintf("%v", time.Now().Unix())
+	fileWriter.Write([]byte(time))
+
+	writer.Close()
+
+	contentType := writer.FormDataContentType()
+
+	FilesWrite := api.FilesWrite{
+		ContentType: contentType,
+		BodyBuf:     bodyBuf,
+		Params:      []string{uid, "time.txt", "0", "true", "true", "", "", "", ""}}
+
+	err = proxy.rpcClient.Call(
+		"",
+		"Cluster",
+		"IPFSFilesWrite",
+		FilesWrite,
+		&struct{}{},
+	)
+	if err != nil {
+		return err
+	}
 
 	return err
 }
