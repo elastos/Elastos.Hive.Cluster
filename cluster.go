@@ -1927,7 +1927,8 @@ func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error)
 		return lastUidkey, nil
 	}
 
-	lenMembers := removeElement(members, c.id);
+	//lenMembers := len(members)
+	members, lenMembers := removeElement(members, c.id);
 
 	if lenMembers == 0 {
 		// 找到的就是自己
@@ -1996,10 +1997,10 @@ func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error)
 	return lastUidkey, err
 }
 
-func removeElement(nums []peer.ID, val peer.ID) int {
+func removeElement(nums []peer.ID, val peer.ID) ([]peer.ID, int) {
 	//如果是空切片，那就返回0
 	if len(nums) == 0 {
-		return 0
+		return nums, 0
 	}
 	//用一个索引
 	//循环去比较
@@ -2009,10 +2010,10 @@ func removeElement(nums []peer.ID, val peer.ID) int {
 	for ; index < len(nums); {
 		if nums[index] == val {
 			nums = append(nums[:index], nums[index+1:]...)
-			continue
+			break
 		}
 		index++
 	}
-	return len(nums)
+	return nums, len(nums)
 }
 
