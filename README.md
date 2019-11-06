@@ -55,6 +55,26 @@ The most up-to-date *Roadmap* is available at https://cluster.ipfs.io/roadmap/ .
 
 Instructions for different installation methods (including from source) are available at https://cluster.ipfs.io/download .
 
+##Building the docker image
+
+The following requirements apply to the building the docker image:
+
+Go 1.12+
+
+Git
+
+docker 18+
+
+Run
+
+git clone https://github.com/elastos/Elastos.NET.Hive.Cluster  -b improvement-0.1
+
+cd ipfs-cluster
+
+docker build . -t hive
+
+in the repository root.
+
 ## Usage
 
 Extensive usage information is provided at https://cluster.ipfs.io/documentation/ , including:
