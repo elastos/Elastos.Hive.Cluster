@@ -1915,13 +1915,9 @@ func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 // Get newest QmHash for uid of the member of this Cluster.
 func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error) {
 	lastUidkey, err := c.FindQmHash(uid);
-	if err != nil {
-		//没有找到最新的UID目录，确保登录成功后有一个存在的UID目录
-		c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
-	}
 
-	logger.Info("PeerID: " + fmt.Sprintf("%s", lastUidkey.PeerID))
-	logger.Info("curUID: " + lastUidkey.UID+" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
+	logger.Info("       UID: " + fmt.Sprintf("%s", lastUidkey.UID))
+	logger.Info("Cur PeerID: " + fmt.Sprintf("%s", lastUidkey.PeerID) +" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
 
 	// Get newest QmHash
 	members, err := c.consensus.Peers(ctx)
@@ -1930,7 +1926,18 @@ func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error)
 		logger.Error("an empty list of peers will be returned")
 		return lastUidkey, nil
 	}
-	lenMembers := len(members)
+
+	lenMembers := removeElement(members, c.id);
+
+	if lenMembers == 0 {
+		// 找到的就是自己
+		if lastUidkey.Root == "" && lastUidkey.UID != "" {
+			//没有UID目录，确保登录成功后有一个存在的UID目录
+			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
+		}
+
+		return lastUidkey, nil
+	}
 
 	peersUID := make([]api.UIDKey, lenMembers, lenMembers)
 
@@ -1961,24 +1968,51 @@ func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error)
 				lastUidkey.PeerID = peersUID[i].PeerID
 			}
 
-			logger.Info("PeerID: " + fmt.Sprintf("%s", peersUID[i].PeerID))
-			logger.Info("peeUID: " + peersUID[i].UID+" ,Root: " + peersUID[i].Root +" ,Time: " + fmt.Sprintf("%s", peersUID[i].Time))
+			logger.Info("Find PeerID: " + fmt.Sprintf("%s", peersUID[i].PeerID)+" ,Root: " + peersUID[i].Root +" ,Time: " + fmt.Sprintf("%s", peersUID[i].Time))
 		}
 	}
 
-	if lastUidkey.UID != "" && lastUidkey.PeerID != c.id {
-		if lastUidkey.Root != ""  {
+	if lastUidkey.PeerID != c.id {
+		if lastUidkey.Root != "" && lastUidkey.UID != ""    {
 			c.ipfs.FilesRm([]string{lastUidkey.UID, "", "true"})
-			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
-			logger.Info("peeUID: " + lastUidkey.UID+" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
+			logger.Info("Last peeUID: " + fmt.Sprintf("%s", lastUidkey.PeerID) +" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s",lastUidkey.Time))
 			err = c.ipfs.FilesCp([]string{lastUidkey.UID, "/ipfs/" + lastUidkey.Root, ""})
 			if err != nil {
 				logger.Error(err)
 			}
+		} else  {
+			//没有找到最新的UID目录，确保登录成功后有一个存在的UID目录
+			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
+		}
+
+	} else {
+		// 找到的就是自己
+		if lastUidkey.Root == "" && lastUidkey.UID != "" {
+			//没有UID目录，确保登录成功后有一个存在的UID目录
+			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
 		}
 	}
 
-
 	return lastUidkey, err
+}
+
+func removeElement(nums []peer.ID, val peer.ID) int {
+	//如果是空切片，那就返回0
+	if len(nums) == 0 {
+		return 0
+	}
+	//用一个索引
+	//循环去比较
+	//当一样的时候就删除对应下标的值
+	//当不一样的时候，索引加1
+	index := 0
+	for ; index < len(nums); {
+		if nums[index] == val {
+			nums = append(nums[:index], nums[index+1:]...)
+			continue
+		}
+		index++
+	}
+	return len(nums)
 }
 

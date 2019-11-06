@@ -1051,12 +1051,10 @@ func (proxy *Server) filesMkdirHandler(w http.ResponseWriter, r *http.Request) {
 		path = "/"
 	}
 
-	if path != "/" {
-		err2 := proxy.uidSpawn(uid)
-		if err2 != nil {
-			ipfsErrorResponder(w, err2.Error(), -1)
-			return
-		}
+	err2 := proxy.uidSpawn(uid)
+	if err2 != nil {
+		ipfsErrorResponder(w, err2.Error(), -1)
+		return
 	}
 
 	parents := q.Get("parents")
@@ -1346,13 +1344,6 @@ func checkErr(err error) {
 
 func (proxy *Server) uidSpawn(uid string) error {
 	//把timeUnix:=time.Now().Unix() 写入uid目录下的time.txt文件内。每次都替换原来的值
-	err := proxy.rpcClient.Call(
-		"",
-		"Cluster",
-		"IPFSFilesMkdir",
-		[]string{uid, "/", "true"},
-		&struct{}{},
-	)
 
 	bodyBuf := &bytes.Buffer{}
 	writer := multipart.NewWriter(bodyBuf)
@@ -1361,7 +1352,7 @@ func (proxy *Server) uidSpawn(uid string) error {
 	if err != nil {
 		return err
 	}
-     var time = fmt.Sprintf("%v", time.Now().Unix())
+    var time = fmt.Sprintf("%v", time.Now().Unix())
 	fileWriter.Write([]byte(time))
 
 	writer.Close()
