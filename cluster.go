@@ -1916,8 +1916,8 @@ func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error) {
 	lastUidkey, err := c.FindQmHash(uid);
 
-	logger.Info("       UID: " + fmt.Sprintf("%s", lastUidkey.UID))
-	logger.Info("Cur PeerID: " + fmt.Sprintf("%s", lastUidkey.PeerID) +" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
+	logger.Info("Cur     UID: " + fmt.Sprintf("%s", lastUidkey.UID))
+	logger.Info("Cur  PeerID: " + fmt.Sprintf("%s", lastUidkey.PeerID) +" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
 
 	// Get newest QmHash
 	members, err := c.consensus.Peers(ctx)
@@ -1975,7 +1975,7 @@ func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error)
 
 	if lastUidkey.PeerID != c.id {
 		if lastUidkey.Root != "" && lastUidkey.UID != ""    {
-			c.ipfs.FilesRm([]string{lastUidkey.UID, "", "true"})
+			c.ipfs.FilesRm([]string{lastUidkey.UID, "", "true", "true"})
 			logger.Info("Last peeUID: " + fmt.Sprintf("%s", lastUidkey.PeerID) +" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s",lastUidkey.Time))
 			err = c.ipfs.FilesCp([]string{lastUidkey.UID, "/ipfs/" + lastUidkey.Root, ""})
 			if err != nil {

@@ -938,19 +938,19 @@ func hiveError(err error, uid string) error {
 }
 
 // create a virtual id.
-func (ipfs *Connector) UidNew(ctx context.Context, name string) (api.UIDSecret, error) {
+func (ipfs *Connector) UidNew(ctx context.Context, uid string) (api.UIDSecret, error) {
 	ctx, cancel := context.WithTimeout(ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
 	secret := api.UIDSecret{}
 
-	url := "files/mkdir?arg=/nodes/" + name + "&parents=true"
+	url := "files/mkdir?arg=/nodes/" + uid + "&parents=true"
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
 		return secret, err
 	}
 
-	secret.UID = name
+	secret.UID = uid
 
 	return secret, nil
 }
@@ -1128,16 +1128,25 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 }
 
 // remove file
-func (ipfs *Connector) FilesRm(rm []string) error {
+func (ipfs *Connector) FilesRm(l []string) error {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/rm?arg=" + filepath.Join("/nodes/", rm[0], rm[1]) + "&recursive=" + rm[2]
+
+	url := "files/rm?arg=" + filepath.Join("/nodes/", l[0], l[1])
+
+	if l[2] != "" {
+		url = url + "&recursive=" + l[2]
+	}
+	if l[3] != "" {
+		url = url + "&force=" + l[3]
+	}
+
 	url = strings.ReplaceAll(url, "\\", "/")
 
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
-		return hiveError(err, rm[0])
+		return hiveError(err, l[0])
 	}
 
 	return nil
