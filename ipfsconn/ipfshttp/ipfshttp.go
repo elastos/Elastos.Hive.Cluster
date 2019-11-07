@@ -1134,10 +1134,10 @@ func (ipfs *Connector) FilesRm(l []string) error {
 
 	url := "files/rm?arg=" + filepath.Join("/nodes/", l[0], l[1])
 
-	if l[2] != "" {
+	if len(l) >= 3 && l[2] != "" {
 		url = url + "&recursive=" + l[2]
 	}
-	if l[3] != "" {
+	if len(l) >= 4 &&  l[3] != "" {
 		url = url + "&force=" + l[3]
 	}
 

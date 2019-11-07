@@ -24,11 +24,11 @@ else
   ipfs init
   ipfs config Addresses.API /ip4/0.0.0.0/tcp/5001
   ipfs config Addresses.Gateway /ip4/0.0.0.0/tcp/8080
-  exec cp /usr/local/bin/swarm.key  ${IPFS_PATH}swarm.key
+  cp /usr/local/bin/swarm.key  ${IPFS_PATH}/swarm.key
 fi
 
 ipfs daemon --migrate=true &
-sleep 3
+sleep 15
 
 ipfs-cluster-service --version
 
@@ -36,6 +36,7 @@ if [ -e "${IPFS_CLUSTER_PATH}/service.json" ]; then
     echo "Found IPFS cluster configuration at ${IPFS_CLUSTER_PATH}"
 else
     ipfs-cluster-service init --consensus "${IPFS_CLUSTER_CONSENSUS}"
+    sed -i -e s/127.0.0.1/0.0.0.0/g ${IPFS_CLUSTER_PATH}/service.json
 fi
 
 exec ipfs-cluster-service $@

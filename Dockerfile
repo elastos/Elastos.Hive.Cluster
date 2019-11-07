@@ -38,7 +38,7 @@ MAINTAINER Hector Sanjuan <hector@protocol.ai>
 ENV GOPATH     /go
 ENV SRC_PATH   /go/src/github.com/ipfs/ipfs-cluster
 ENV IPFS_PATH /data/ipfs
-ENV IPFS_CLUSTER_PATH /data/ipfs-cluster
+ENV IPFS_CLUSTER_PATH /data/ipfs/cluster
 ENV IPFS_CLUSTER_CONSENSUS crdt
 
 # Swarm TCP; should be exposed to the public
@@ -76,8 +76,11 @@ RUN mkdir -p $IPFS_PATH && \
 VOLUME $IPFS_PATH
 
 RUN mkdir -p $IPFS_CLUSTER_PATH && \
-    adduser -D -h $IPFS_CLUSTER_PATH -u 1000 -G users ipfs && \
+    #adduser -D -h $IPFS_PATH -u 1000 -G users ipfs && \
     chown ipfs:users $IPFS_CLUSTER_PATH
+
+RUN chmod 777 /usr/local/bin/ipfs
+RUN chmod 777 /usr/local/bin/ipfs-cluster-service
 
 VOLUME $IPFS_CLUSTER_PATH
 
