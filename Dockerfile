@@ -37,8 +37,18 @@ MAINTAINER Hector Sanjuan <hector@protocol.ai>
 
 ENV GOPATH     /go
 ENV SRC_PATH   /go/src/github.com/ipfs/ipfs-cluster
+ENV IPFS_PATH /data/ipfs
 ENV IPFS_CLUSTER_PATH /data/ipfs-cluster
 ENV IPFS_CLUSTER_CONSENSUS crdt
+
+# Swarm TCP; should be exposed to the public
+EXPOSE 4001
+# Daemon API; must not be exposed publicly but to client services under you control
+EXPOSE 5001
+# Web Gateway; can be exposed publicly with a proxy, e.g. as https://ipfs.example.org
+EXPOSE 8080
+# Swarm Websockets; must be exposed publicly when the node is listening using the websocket transport (/ipX/.../tcp/8081/ws).
+EXPOSE 8081
 
 EXPOSE 9094
 EXPOSE 9095
@@ -46,17 +56,32 @@ EXPOSE 9096
 
 COPY --from=builder $GOPATH/bin/ipfs-cluster-service /usr/local/bin/ipfs-cluster-service
 COPY --from=builder $GOPATH/bin/ipfs-cluster-ctl /usr/local/bin/ipfs-cluster-ctl
-COPY --from=builder $SRC_PATH/docker/entrypoint.sh /usr/local/bin/entrypoint.sh
+COPY --from=builder $SRC_PATH/docker/start-daemons.sh /usr/local/bin/start-daemons.sh
 COPY --from=builder /tmp/su-exec/su-exec /sbin/su-exec
 COPY --from=builder /tmp/tini /sbin/tini
 COPY --from=builder /etc/ssl/certs /etc/ssl/certs
+
+#for ipfs
+COPY --from=builder $SRC_PATH/shell/ipfs /usr/local/bin/ipfs
+COPY --from=builder $SRC_PATH/shell/swarm.key /usr/local/bin/swarm.key
+
+# This shared lib (part of glibc) doesn't seem to be included with busybox.
+COPY --from=0 /lib/x86_64-linux-gnu/libdl-2.24.so /lib/libdl.so.2
+
+#for ipfs
+RUN mkdir -p $IPFS_PATH && \
+    adduser -D -h $IPFS_PATH -u 1000 -G users ipfs && \
+    chown ipfs:users $IPFS_PATH
+
+VOLUME $IPFS_PATH
 
 RUN mkdir -p $IPFS_CLUSTER_PATH && \
     adduser -D -h $IPFS_CLUSTER_PATH -u 1000 -G users ipfs && \
     chown ipfs:users $IPFS_CLUSTER_PATH
 
 VOLUME $IPFS_CLUSTER_PATH
-ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/entrypoint.sh"]
+
+ENTRYPOINT ["/sbin/tini", "--", "/usr/local/bin/start-daemons.sh"]
 
 # Defaults for ipfs-cluster-service go here
 CMD ["daemon"]

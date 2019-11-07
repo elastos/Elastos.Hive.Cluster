@@ -5,6 +5,7 @@ if [ -n "$DOCKER_DEBUG" ]; then
    set -x
 fi
 user=ipfs
+export CLUSTER_SECRET="d2b0fb2c1efc772e5720c0f659bffa0fb800efcdebc8c7e9b94c183f2a285546"
 
 if [ `id -u` -eq 0 ]; then
     echo "Changing user to $user"
@@ -23,6 +24,7 @@ else
   ipfs init
   ipfs config Addresses.API /ip4/0.0.0.0/tcp/5001
   ipfs config Addresses.Gateway /ip4/0.0.0.0/tcp/8080
+  exec cp /usr/local/bin/swarm.key  ${IPFS_PATH}swarm.key
 fi
 
 ipfs daemon --migrate=true &
