@@ -37,7 +37,7 @@ if [ -e "${IPFS_CLUSTER_PATH}/service.json" ]; then
 else
     ipfs-cluster-service init --consensus "${IPFS_CLUSTER_CONSENSUS}"
     sed -i -e s/127.0.0.1/0.0.0.0/g ${IPFS_CLUSTER_PATH}/service.json
-    sed -i 4c '    "secret": "d2b0fb2c1efc772e5720c0f659bffa0fb800efcdebc8c7e9b94c183f2a285546",' ${IPFS_CLUSTER_PATH}/service.json
+    sed -i  '4c       "secret": "d2b0fb2c1efc772e5720c0f659bffa0fb800efcdebc8c7e9b94c183f2a285546",' ${IPFS_CLUSTER_PATH}/service.json
 fi
 
 exec ipfs-cluster-service $@
