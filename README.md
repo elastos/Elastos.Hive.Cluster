@@ -36,6 +36,7 @@ Please participate in the [IPFS Cluster user registry](https://docs.google.com/f
 - [Documentation](#documentation)
 - [News & Roadmap](#news--roadmap)
 - [Install](#install)
+- [Docker image](#Building Image)
 - [Usage](#usage)
 - [Contribute](#contribute)
 - [License](#license)
@@ -55,15 +56,13 @@ The most up-to-date *Roadmap* is available at https://cluster.ipfs.io/roadmap/ .
 
 Instructions for different installation methods (including from source) are available at https://cluster.ipfs.io/download .
 
-##Building the docker image
+##Docker image
 
 The following requirements apply to the building the docker image:
 
-Go 1.12+
-
-Git
-
-docker 18+
+- Go 1.12+
+- Git
+- docker 18+
 
 Run
 ```sh
@@ -74,9 +73,8 @@ cd ipfs-cluster
 docker build . -t hive
 ```
 
-in the repository root.
-
-change logs 
+Change logs 
+```
 1 ENV GOPROXY=https://goproxy.cn
 
 2 same CLUSTER_SECRET
@@ -84,17 +82,18 @@ CLUSTER_SECRET="d2b0fb2c1efc772e5720c0f659bffa0fb800efcdebc8c7e9b94c183f2a285546
 
 3 swarm.key  
 file  in Elastos.NET.Hive.Cluster\shell
+```
 
-
-docker images 
+###Save images 
 
 show docker images：
-
+```sh
 docker images
-
+```
+```
 REPOSITORY            TAG                 IMAGE ID            CREATED             SIZE
 hive                latest              90b2ef439b40         1 hours ago         63.2MB
-
+```
 save images：
 ```sh
 docker save -o path name:tag
@@ -110,7 +109,7 @@ docker load --input ./hive.tar
 copy hive.tar form in other node
 
 
-run images;
+###Run images
 ```sh
 docker run -p 4001:4001 -p 5001:5001 -p 8080:8080 -p 8081:8081 -p 9094:9094 -p 9095:9095 -p 9096:9096  -it hive:latest daemon --bootstrap XXX
 ```
