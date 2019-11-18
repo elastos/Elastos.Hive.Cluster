@@ -639,14 +639,16 @@ func (rpcapi *ClusterRPCAPI) UidLogin(ctx context.Context, in []string, out *api
 	uidkey.PeerID = rpcapi.c.id
 
 	if uidkey.Root == "" {
-		uidkey, err := rpcapi.c.AutoLogin(ctx, uidkey.UID)
-		*out = uidkey
-		return err
-	} else {
-		err := rpcapi.c.ipfs.UidLogin(ctx, uidkey)
-		*out = uidkey
-		return err
+		lastkey, err := rpcapi.c.AutoLogin(ctx, uidkey.UID)
+		if err != nil {
+			return err
+		}
+		uidkey = lastkey;
 	}
+
+	err := rpcapi.c.ipfs.UidLogin(ctx, uidkey)
+	*out = uidkey
+	return err
 }
 
 // IPFSFileGet runs IPFSConnector.IPFSFileGet().

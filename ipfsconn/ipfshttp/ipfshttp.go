@@ -49,6 +49,9 @@ var updateMetricMod = 10
 // requests.
 var progressTick = 5 * time.Second
 
+
+var uidkey map[string]string = make(map[string]string)
+
 // Connector implements the IPFSConnector interface
 // and provides a component which  is used to perform
 // on-demand requests against the configured IPFS daemom
@@ -964,7 +967,7 @@ func (ipfs *Connector) UidLogin(ctx context.Context, key api.UIDKey) error {
 	uid := key.UID
 	hash := key.Root
 
-	if hash == "" {
+	if uid != "" &&  hash == "" {
 		err := ipfs.FilesMkdir([]string{uid, "", "true"})
 		if err != nil {
 			logger.Error(err)
@@ -972,24 +975,31 @@ func (ipfs *Connector) UidLogin(ctx context.Context, key api.UIDKey) error {
 		return nil
 	}
 
+	uidkey[uid] = hash
+
+	go copylastRoot(ipfs, ctx, key)
+
+	return nil
+}
+
+func copylastRoot(ipfs *Connector, ctx context.Context, lastUidkey api.UIDKey) {
+	hash := lastUidkey.Root
+
 	if !strings.HasPrefix(hash, "/ipfs/") {
 		hash = "/ipfs/" + hash
 	}
 
-	url := "files/rm?arg=/nodes/" + uid + "&recursive=true&force=true"
+	url := "files/rm?arg=/nodes/" + lastUidkey.UID + "&recursive=true&force=true"
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
 	}
 
-	url = "files/cp?arg=" + hash + "&arg=" + "/nodes/" + uid
+	url = "files/cp?arg=" + hash + "&arg=" + "/nodes/" + lastUidkey.UID
 	_, err = ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
-		return hiveError(err, uid)
 	}
-
-	return nil
 }
 
 // get file from IPFS service
@@ -1109,7 +1119,8 @@ func (ipfs *Connector) FilesMv(mv []string) error {
 func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/read?arg=" + filepath.Join("/nodes/", l[0], l[1])
+	uid := l[0];
+	url := "files/read?arg=" + filepath.Join("/nodes/", uid, l[1])
 	url = strings.ReplaceAll(url, "\\", "/")
 	if l[2] != "" {
 		url = url + "&offset=" + l[2]
@@ -1121,7 +1132,21 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 	res, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
-		return nil, hiveError(err, l[0])
+		hash := uidkey[uid]
+
+		if !strings.HasPrefix(hash, "/ipfs/") {
+			hash = "/ipfs/" + hash
+		}
+
+		url = strings.ReplaceAll(url, "/nodes/" + uid, hash)
+
+		res, err := ipfs.postCtx(ctx, url, "", nil)
+		if err != nil {
+			logger.Error(err)
+			return nil, hiveError(err, l[0])
+		}
+		
+		return res, nil
 	}
 
 	return res, nil

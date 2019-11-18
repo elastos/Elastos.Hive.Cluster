@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"mime/multipart"
 	"strings"
-	//"path/filepath"
 	"sort"
 	"sync"
 	"time"
@@ -1931,12 +1930,6 @@ func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error)
 	members, lenMembers := removeElement(members, c.id);
 
 	if lenMembers == 0 {
-		// 找到的就是自己
-		if lastUidkey.Root == "" && lastUidkey.UID != "" {
-			//没有UID目录，确保登录成功后有一个存在的UID目录
-			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
-		}
-
 		return lastUidkey, nil
 	}
 
@@ -1970,27 +1963,6 @@ func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error)
 			}
 
 			logger.Info("Find PeerID: " + fmt.Sprintf("%s", peersUID[i].PeerID)+" ,Root: " + peersUID[i].Root +" ,Time: " + fmt.Sprintf("%s", peersUID[i].Time))
-		}
-	}
-
-	if lastUidkey.PeerID != c.id {
-		if lastUidkey.Root != "" && lastUidkey.UID != ""    {
-			c.ipfs.FilesRm([]string{lastUidkey.UID, "", "true", "true"})
-			logger.Info("Last peeUID: " + fmt.Sprintf("%s", lastUidkey.PeerID) +" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s",lastUidkey.Time))
-			err = c.ipfs.FilesCp([]string{lastUidkey.UID, "/ipfs/" + lastUidkey.Root, ""})
-			if err != nil {
-				logger.Error(err)
-			}
-		} else  {
-			//没有找到最新的UID目录，确保登录成功后有一个存在的UID目录
-			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
-		}
-
-	} else {
-		// 找到的就是自己
-		if lastUidkey.Root == "" && lastUidkey.UID != "" {
-			//没有UID目录，确保登录成功后有一个存在的UID目录
-			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
 		}
 	}
 

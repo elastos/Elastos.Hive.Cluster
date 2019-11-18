@@ -66,15 +66,15 @@ Git
 docker 18+
 
 Run
-
+```sh
 git clone https://github.com/elastos/Elastos.NET.Hive.Cluster  -b improvement-0.1
 
 cd ipfs-cluster
 
 docker build . -t hive
+```
 
 in the repository root.
-
 
 change logs 
 1 ENV GOPROXY=https://goproxy.cn
@@ -96,28 +96,28 @@ REPOSITORY            TAG                 IMAGE ID            CREATED           
 hive                latest              90b2ef439b40         1 hours ago         63.2MB
 
 save images：
-
+```sh
 docker save -o path name:tag
-
+```
 example:
-
+```sh
 docker save -o ./hive.tar hive:latest 
-
+```
 load images:
-
+```sh
 docker load --input ./hive.tar
-
+```
 copy hive.tar form in other node
 
 
 run images;
-
+```sh
 docker run -p 4001:4001 -p 5001:5001 -p 8080:8080 -p 8081:8081 -p 9094:9094 -p 9095:9095 -p 9096:9096  -it hive:latest daemon --bootstrap XXX
-
+```
 example:
-
+```sh
 docker run -p 4001:4001 -p 5001:5001 -p 8080:8080 -p 8081:8081 -p 9094:9094 -p 9095:9095 -p 9096:9096  -it hive:latest daemon --bootstrap /ip4/10.10.156.160/tcp/9096/p2p/12D3KooWFG2K54RPcbTMdeN5di57NeEbMM3shb3txnBTGfP6kqMD
-
+```
 
 
 ## Usage
