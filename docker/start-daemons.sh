@@ -5,7 +5,7 @@ if [ -n "$DOCKER_DEBUG" ]; then
    set -x
 fi
 user=ipfs
-export CLUSTER_SECRET="d2b0fb2c1efc772e5720c0f659bffa0fb800efcdebc8c7e9b94c183f2a285546"
+#export CLUSTER_SECRET="93c698941b4512b09f400599560384f92fb4e82c3d14e260f9049f2fadbf5846"
 
 if [ `id -u` -eq 0 ]; then
     echo "Changing user to $user"
@@ -37,7 +37,7 @@ if [ -e "${IPFS_CLUSTER_PATH}/service.json" ]; then
 else
     ipfs-cluster-service init --consensus "${IPFS_CLUSTER_CONSENSUS}"
     sed -i -e s/127.0.0.1/0.0.0.0/g ${IPFS_CLUSTER_PATH}/service.json
-    sed -i  '4c       "secret": "d2b0fb2c1efc772e5720c0f659bffa0fb800efcdebc8c7e9b94c183f2a285546",' ${IPFS_CLUSTER_PATH}/service.json
+    sed -i  '4c       "secret": "93c698941b4512b09f400599560384f92fb4e82c3d14e260f9049f2fadbf5846",' ${IPFS_CLUSTER_PATH}/service.json
 fi
 
 exec ipfs-cluster-service $@

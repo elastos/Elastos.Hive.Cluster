@@ -70,7 +70,7 @@ git clone https://github.com/elastos/Elastos.NET.Hive.Cluster  -b improvement-0.
 
 cd ipfs-cluster
 
-docker build . -t hive
+sudo docker build . -t hive
 ```
 
 Change logs 
@@ -78,7 +78,7 @@ Change logs
 1 ENV GOPROXY=https://goproxy.cn
 
 2 same CLUSTER_SECRET
-CLUSTER_SECRET="d2b0fb2c1efc772e5720c0f659bffa0fb800efcdebc8c7e9b94c183f2a285546"
+CLUSTER_SECRET="93c698941b4512b09f400599560384f92fb4e82c3d14e260f9049f2fadbf5846"
 
 3 swarm.key  
 file  in Elastos.NET.Hive.Cluster\shell
@@ -96,26 +96,26 @@ hive                latest              90b2ef439b40         1 hours ago        
 ```
 save images：
 ```sh
-docker save -o path name:tag
+sudo docker save -o path name:tag
 ```
 example:
 ```sh
-docker save -o ./hive.tar hive:latest 
+sudo docker save -o ./hive.tar hive:latest 
 ```
 load images:
 ```sh
-docker load --input ./hive.tar
+sudo docker load --input ./hive.tar
 ```
 copy hive.tar form in other node
 
 
 ###Run images
 ```sh
-docker run -p 4001:4001 -p 5001:5001 -p 8080:8080 -p 8081:8081 -p 9094:9094 -p 9095:9095 -p 9096:9096  -it hive:latest daemon --bootstrap XXX
+sudo ocker run -p 4001:4001 -p 5001:5001 -p 8080:8080 -p 8081:8081 -p 9094:9094 -p 9095:9095 -p 9096:9096  -it hive:latest daemon --bootstrap XXX
 ```
 example:
 ```sh
-docker run -p 4001:4001 -p 5001:5001 -p 8080:8080 -p 8081:8081 -p 9094:9094 -p 9095:9095 -p 9096:9096  -it hive:latest daemon --bootstrap /ip4/10.10.156.160/tcp/9096/p2p/12D3KooWFG2K54RPcbTMdeN5di57NeEbMM3shb3txnBTGfP6kqMD
+sudo docker run -p 4001:4001 -p 5001:5001 -p 8080:8080 -p 8081:8081 -p 9094:9094 -p 9095:9095 -p 9096:9096  -it hive:latest daemon --bootstrap /ip4/149.28.250.203/tcp/9096/p2p/12D3KooWAcu6DJVJLFs1mQQLpP2FS81pvoqXsdAC1xJ19y8Q9YF2
 ```
 
 
