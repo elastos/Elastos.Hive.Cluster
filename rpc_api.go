@@ -639,7 +639,7 @@ func (rpcapi *ClusterRPCAPI) UidLogin(ctx context.Context, in []string, out *api
 	uidkey.PeerID = rpcapi.c.id
 
 	if uidkey.Root == "" {
-		lastkey, err := rpcapi.c.AutoLogin(ctx, uidkey.UID)
+		lastkey, err := rpcapi.c.AutoLogin(uidkey.UID)
 		if err != nil {
 			return err
 		}

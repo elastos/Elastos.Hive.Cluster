@@ -1898,7 +1898,7 @@ func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 	uidkey.Root = stat.Hash
 	if uidkey.Root != "" {
 		//确保文件一定存在目录的更新时间
-		stat2, err2 := c.ipfs.FilesRead([]string{uid + "/time.txt", "", "", "", "", ""})
+		stat2, err2 := c.ipfs.FilesRead([]string{uid, "time.txt", "", "", "", ""})
 		if err2 != nil {
 			return uidkey, nil
 		}
@@ -1912,14 +1912,14 @@ func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 }
 
 // Get newest QmHash for uid of the member of this Cluster.
-func (c *Cluster) AutoLogin(ctx context.Context, uid string) (api.UIDKey, error) {
+func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 	lastUidkey, err := c.FindQmHash(uid);
 
 	logger.Info("Cur     UID: " + fmt.Sprintf("%s", lastUidkey.UID))
 	logger.Info("Cur  PeerID: " + fmt.Sprintf("%s", lastUidkey.PeerID) +" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
 
 	// Get newest QmHash
-	members, err := c.consensus.Peers(ctx)
+	members, err := c.consensus.Peers(c.ctx)
 	if err != nil {
 		logger.Error(err)
 		logger.Error("an empty list of peers will be returned")

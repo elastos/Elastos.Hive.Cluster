@@ -1051,10 +1051,13 @@ func (proxy *Server) filesMkdirHandler(w http.ResponseWriter, r *http.Request) {
 		path = "/"
 	}
 
-	err2 := proxy.uidSpawn(uid)
-	if err2 != nil {
-		ipfsErrorResponder(w, err2.Error(), -1)
-		return
+	// the root directoty no set time
+	if path != "/" {
+		err2 := proxy.uidSpawn(uid)
+		if err2 != nil {
+			ipfsErrorResponder(w, err2.Error(), -1)
+			return
+		}
 	}
 
 	parents := q.Get("parents")

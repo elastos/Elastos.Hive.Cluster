@@ -977,12 +977,15 @@ func (ipfs *Connector) UidLogin(ctx context.Context, key api.UIDKey) error {
 
 	uidkey[uid] = hash
 
-	go copylastRoot(ipfs, ctx, key)
+	copyLastRoot(ipfs, ctx, key)
 
 	return nil
 }
 
-func copylastRoot(ipfs *Connector, ctx context.Context, lastUidkey api.UIDKey) {
+func copyLastRoot(ipfs *Connector, ctx context.Context, lastUidkey api.UIDKey) {
+	ctx, cancel := context.WithTimeout(ctx, ipfs.config.IPFSRequestTimeout)
+	defer cancel()
+
 	hash := lastUidkey.Root
 
 	if !strings.HasPrefix(hash, "/ipfs/") {
@@ -992,13 +995,17 @@ func copylastRoot(ipfs *Connector, ctx context.Context, lastUidkey api.UIDKey) {
 	url := "files/rm?arg=/nodes/" + lastUidkey.UID + "&recursive=true&force=true"
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
-		logger.Error(err)
+		logger.Debug(err)
 	}
 
 	url = "files/cp?arg=" + hash + "&arg=" + "/nodes/" + lastUidkey.UID
 	_, err = ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
+		err := ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
+		if err != nil {
+			logger.Error(err)
+		}
 	}
 }
 
@@ -1130,9 +1137,14 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 	}
 
 	res, err := ipfs.postCtx(ctx, url, "", nil)
+
 	if err != nil {
-		logger.Error(err)
+	    logger.Error(err)
 		hash := uidkey[uid]
+		if hash == "" {
+
+			return nil, hiveError(err, l[0])
+		}
 
 		if !strings.HasPrefix(hash, "/ipfs/") {
 			hash = "/ipfs/" + hash
