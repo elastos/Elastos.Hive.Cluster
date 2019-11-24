@@ -644,6 +644,8 @@ func (rpcapi *ClusterRPCAPI) UidLogin(ctx context.Context, in []string, out *api
 			return err
 		}
 		uidkey = lastkey;
+		*out = uidkey
+		return err
 	}
 
 	err := rpcapi.c.ipfs.UidLogin(ctx, uidkey)

@@ -76,6 +76,10 @@ type Connector struct {
 	wg           sync.WaitGroup
 }
 
+func (ipfs *Connector) SaveUID(uid string, qmhash string) {
+	uidkey[uid] = qmhash
+}
+
 type ipfsError struct {
 	Message string
 }
@@ -983,9 +987,6 @@ func (ipfs *Connector) UidLogin(ctx context.Context, key api.UIDKey) error {
 }
 
 func copyLastRoot(ipfs *Connector, ctx context.Context, lastUidkey api.UIDKey) {
-	ctx, cancel := context.WithTimeout(ctx, ipfs.config.IPFSRequestTimeout)
-	defer cancel()
-
 	hash := lastUidkey.Root
 
 	if !strings.HasPrefix(hash, "/ipfs/") {
@@ -1142,7 +1143,6 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 	    logger.Error(err)
 		hash := uidkey[uid]
 		if hash == "" {
-
 			return nil, hiveError(err, l[0])
 		}
 
@@ -1195,7 +1195,8 @@ func (ipfs *Connector) FilesStat(st []string) (api.FilesStat, error) {
 	defer cancel()
 
 	FilesStat := api.FilesStat{}
-	url := "files/stat?arg=" + filepath.Join("/nodes/", st[0], st[1])
+	uid := st[0]
+	url := "files/stat?arg=" + filepath.Join("/nodes/", uid, st[1])
 	url = strings.ReplaceAll(url, "\\", "/")
 	if st[2] != "" {
 		url = url + "&format=" + st[2]
@@ -1213,7 +1214,20 @@ func (ipfs *Connector) FilesStat(st []string) (api.FilesStat, error) {
 	res, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
-		return FilesStat, hiveError(err, st[0])
+		hash := uidkey[uid]
+		if hash != "" {
+			if !strings.HasPrefix(hash, "/ipfs/") {
+				hash = "/ipfs/" + hash
+			}
+
+			url = strings.ReplaceAll(url, "/nodes/" + uid, hash)
+
+			res, err = ipfs.postCtx(ctx, url, "", nil)
+			if err != nil {
+				logger.Error(err)
+			}
+		}
+
 	}
 
 	err = json.Unmarshal(res, &FilesStat)

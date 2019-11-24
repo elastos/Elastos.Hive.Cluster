@@ -1930,6 +1930,12 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 	members, lenMembers := removeElement(members, c.id);
 
 	if lenMembers == 0 {
+		// 找到的就是自己
+		if lastUidkey.Root == "" && lastUidkey.UID != "" {
+			//没有UID目录，确保登录成功后有一个存在的UID目录
+			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
+		}
+
 		return lastUidkey, nil
 	}
 
@@ -1963,6 +1969,40 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 			}
 
 			logger.Info("Find PeerID: " + fmt.Sprintf("%s", peersUID[i].PeerID)+" ,Root: " + peersUID[i].Root +" ,Time: " + fmt.Sprintf("%s", peersUID[i].Time))
+		}
+	}
+
+
+	if lastUidkey.UID != "" &&  lastUidkey.Root == "" {
+		err := c.ipfs.FilesMkdir([]string{uid, "", "true"})
+		if err != nil {
+			logger.Error(err)
+		}
+		return lastUidkey, err
+	}
+
+
+	hash := lastUidkey.Root
+
+	if !strings.HasPrefix(hash, "/ipfs/") {
+		hash = "/ipfs/" + hash
+	}
+
+	c.ipfs.SaveUID(uid, hash)
+
+
+	if lastUidkey.PeerID != c.id {
+		if lastUidkey.Root != "" && lastUidkey.UID != "" {
+			c.ipfs.FilesRm([]string{lastUidkey.UID, "", "true", "true"})
+			logger.Info("Last peeUID: " + fmt.Sprintf("%s", lastUidkey.PeerID) + " ,Root: " + lastUidkey.Root + " ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
+			err = c.ipfs.FilesCp([]string{lastUidkey.UID, hash, ""})
+			if err != nil {
+				logger.Error(err)
+				err := c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
+				if err != nil {
+					logger.Error(err)
+				}
+			}
 		}
 	}
 

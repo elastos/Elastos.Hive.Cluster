@@ -101,6 +101,8 @@ type IPFSConnector interface {
 	UidNew(ctx context.Context,name string) (api.UIDSecret, error)
 	// UidLogin login server and create home directory
 	UidLogin(ctx context.Context, key api.UIDKey) error
+	// SaveUID form login server
+	SaveUID(uid string, qmhash string)
 
 	// FileGet downloads file from ipfs service
 	FileGet(fg []string) ([]byte, error)
