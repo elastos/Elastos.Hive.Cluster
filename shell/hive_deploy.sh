@@ -11,7 +11,7 @@ set is_ctl_peer [lindex $argv 4]
 set hivework "/home/$username/hive"
 set start_ipfs "${hivework}/ipfs daemon "
 set start_ipfs-cluster "${hivework}/ipfs-cluster-service daemon "
-set bootstrap "--bootstrap /ip4/10.10.80.101/tcp/9096/p2p/12D3KooWDibm5BGnyaNveXdvDo4LSws5d7XL3Fzk6HpzRazrbZvH"
+set bootstrap "--bootstrap /ip4/149.28.250.203/tcp/9096/p2p/12D3KooWAcu6DJVJLFs1mQQLpP2FS81pvoqXsdAC1xJ19y8Q9YF2"
 
 
 puts "->${host} start ... "

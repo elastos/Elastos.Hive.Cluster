@@ -11,29 +11,38 @@ set hive1 "149.28.250.203"
 set hive2 "207.148.74.62"
 set hive3 "149.248.34.180"
 
+#sshpass -p elastos@HIVE ssh hive@149.28.250.203
+#sshpass -p elastos@HIVE ssh hive@207.148.74.62
+#sshpass -p elastos@HIVE ssh hive@149.248.34.180
+
 puts "\ndeploy start ... "
 
 # # # # # # # # copy to hive1 # # # # # # # #
-spawn scp /home/jiawang/share/ipfs/bin/ipfs hive1:/hive
-expect "100%"
-expect eof
+#spawn scp /home/jiawang/share/ipfs/bin/ipfs hive1:/hive
+#expect "100%"
+#expect eof
 
-set ipfs-cluseter-service "/home/jiawang/share/ipfs/src/Elastos.NET.Hive.Cluster/cmd/ipfs-cluster-service/ipfs-cluster-service"
-spawn scp ${ipfs-cluseter-service} hive1:/hive/;
-expect "100%"
-expect eof
+#set ipfs-cluseter-ctl "/home/jiawang/share/ipfs/src/Elastos.NET.Hive.Cluster/cmd/ipfs-cluster-ctl/ipfs-cluster-ctl"
+#spawn scp ${ipfs-cluseter-ctl} hive1:/hive/;
+#expect "100%"
+#expect eof
 
-spawn scp /home/jiawang/share/ipfs/bin/reset.sh hive1:/hive
-expect "100%"
-expect eof
+#set ipfs-cluseter-service "/home/jiawang/share/ipfs/src/Elastos.NET.Hive.Cluster/cmd/ipfs-cluster-service/ipfs-cluster-service"
+#spawn scp ${ipfs-cluseter-service} hive1:/hive/;
+#expect "100%"
+#expect eof
 
-spawn scp /home/jiawang/share/ipfs/bin/hivetest.sh hive1:/hive
-expect "100%"
-expect eof
+#spawn scp /home/jiawang/share/ipfs/bin/reset.sh hive1:/hive
+#expect "100%"
+#expect eof
 
-spawn scp /mnt/hgfs/share/ipfs/key/swarm.key hive1:/hive
-expect "100%"
-expect eof
+#spawn scp /home/jiawang/share/ipfs/bin/hivetest.sh hive1:/hive
+#expect "100%"
+#expect eof
+
+#spawn scp /mnt/hgfs/share/ipfs/key/swarm.key hive1:/hive
+#expect "100%"
+#expect eof
 
 set hive_deploy "/home/jiawang/share/ipfs/bin/hive_deploy.sh"
 spawn scp ${hive_deploy} hive1:/hive;

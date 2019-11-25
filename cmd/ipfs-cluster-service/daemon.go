@@ -47,7 +47,7 @@ func parseBootstraps(flagVal []string) (bootstraps []ma.Multiaddr) {
 
 // Runs the cluster peer
 func daemon(c *cli.Context) error {
-	logger.Info("Initializing. For verbose output run with \"-l debug\". Please wait...")
+	logger.Info("Initializing %s. For verbose output run with \"-l debug\". Please wait...", commit)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	var bootstraps []ma.Multiaddr

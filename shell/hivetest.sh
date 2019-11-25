@@ -1,10 +1,10 @@
 #!/bin/bash
 
 
-HIVE1=10.10.80.10
-HIVE2=10.10.80.101
-HIVE3=10.10.156.100
-HIVE4=10.10.156.160
+HIVE1=149.28.250.203
+HIVE2=207.148.74.62
+HIVE3=149.248.34.180
+#HIVE4=10.10.156.160
 
 #HIVE5=52.83.159.189
 
@@ -19,6 +19,7 @@ TEST_SIZE=(4k 64k 512k 1M 2M 5M 10M) # Also as filename
 
 # Uncomment it to use the fixed UID
 # HIVE_UID=uid-e47d0e5c-853b-45a6-a5b0-286c5fd680fd
+# HIVE_UID="uid-jw"
 
 function show_error()
 {
@@ -112,6 +113,7 @@ do
         #curl "http://${SERVER2}:9095/api/v0/uid/login?uid=${HIVE_UID}&hash=/ipfs/${HOME_HASH}" || show_error "You cannot login ${SERVER2}."
         curl "http://${SERVER2}:9095/api/v0/uid/login?uid=${HIVE_UID}" || show_error "You cannot login ${SERVER2}."
         time_end_login_server2=`date +%s.%N`
+        logs_time Login_${SERVER2} $time_start_login_server2 $time_end_login_server2
         logs "[Info] Login ${SERVER2} successfully"
             
        # show_steps "Now sleep for 10 seconds"
