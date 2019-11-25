@@ -1130,9 +1130,12 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 	uid := l[0];
 
 	hash := uidkey[uid]
+	uselocal := false
+	if len(l) >= 5 &&  l[4] == "true" {
+		uselocal = true
+	}
 
-
-	if hash != "" {
+	if hash != "" && !uselocal {
 		if !strings.HasPrefix(hash, "/ipfs/") {
 			hash = "/ipfs/" + hash
 		}

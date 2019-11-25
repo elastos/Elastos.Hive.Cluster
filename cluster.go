@@ -1898,7 +1898,7 @@ func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 	uidkey.Root = stat.Hash
 	if uidkey.Root != "" {
 		//确保文件一定存在目录的更新时间
-		stat2, err2 := c.ipfs.FilesRead([]string{uid, "time.txt", "", "", "", ""})
+		stat2, err2 := c.ipfs.FilesRead([]string{uid, "time.txt", "", "", "true"})
 		if err2 != nil {
 			return uidkey, nil
 		}
