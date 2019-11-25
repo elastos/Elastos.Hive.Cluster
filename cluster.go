@@ -1920,6 +1920,13 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 
     go copyLastQmhash(c, lastUidkey)
 
+	if lastUidkey.Root != "" {
+		if !strings.HasPrefix(lastUidkey.Root, "/ipfs/") {
+			lastUidkey.Root = "/ipfs/" + lastUidkey.Root
+		}
+
+		c.ipfs.SaveUID(lastUidkey.UID, lastUidkey.Root)
+	}
 	return lastUidkey, err
 }
 
@@ -1984,19 +1991,23 @@ func copyLastQmhash(c *Cluster, lastUidkey api.UIDKey) error {
 		}
 		return err
 	}
-
 	hash := lastUidkey.Root
 
-	if !strings.HasPrefix(hash, "/ipfs/") {
-		hash = "/ipfs/" + hash
-	}
+	if lastUidkey.Root != "" {
+		if !strings.HasPrefix(hash, "/ipfs/") {
+			hash = "/ipfs/" + hash
+		}
 
-	c.ipfs.SaveUID(lastUidkey.UID, hash)
+		c.ipfs.SaveUID(lastUidkey.UID, hash)
+    }
 
 	if lastUidkey.PeerID != c.id {
 		if lastUidkey.Root != "" && lastUidkey.UID != "" {
 			c.ipfs.FilesRm([]string{lastUidkey.UID, "", "true", "true"})
 			logger.Info("Last peeUID: " + fmt.Sprintf("%s", lastUidkey.PeerID) + " ,Root: " + lastUidkey.Root + " ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
+			if !strings.HasPrefix(hash, "/ipfs/") {
+				hash = "/ipfs/" + hash
+			}
 			err = c.ipfs.FilesCp([]string{lastUidkey.UID, hash, ""})
 			if err != nil {
 				logger.Error(err)

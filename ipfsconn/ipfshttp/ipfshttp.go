@@ -1128,37 +1128,40 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
 	uid := l[0];
-	url := "files/read?arg=" + filepath.Join("/nodes/", uid, l[1])
-	url = strings.ReplaceAll(url, "\\", "/")
-	if l[2] != "" {
-		url = url + "&offset=" + l[2]
-	}
-	if l[3] != "" {
-		url = url + "&count=" + l[3]
-	}
 
-	res, err := ipfs.postCtx(ctx, url, "", nil)
+	hash := uidkey[uid]
 
-	if err != nil {
-	    logger.Error(err)
-		hash := uidkey[uid]
-		if hash == "" {
-			return nil, hiveError(err, l[0])
-		}
 
+	if hash != "" {
 		if !strings.HasPrefix(hash, "/ipfs/") {
 			hash = "/ipfs/" + hash
 		}
 
-		url = strings.ReplaceAll(url, "/nodes/" + uid, hash)
+		url := "cat?arg=" + filepath.Join(hash, l[1])
+		url = strings.ReplaceAll(url, "\\", "/")
+		if l[2] != "" {
+			url = url + "&offset=" + l[2]
+		}
+		if l[3] != "" {
+			url = url + "&length=" + l[3]
+		}
 
 		res, err := ipfs.postCtx(ctx, url, "", nil)
-		if err != nil {
-			logger.Error(err)
-			return nil, hiveError(err, l[0])
+		if err == nil {
+			return res, nil
 		}
-		
-		return res, nil
+	}
+
+	url2 := "files/read?arg=" + filepath.Join("/nodes/", uid, l[1])
+	url2 = strings.ReplaceAll(url2, "\\", "/")
+	ctx2, cancel2 := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
+	defer cancel2()
+
+	res, err := ipfs.postCtx(ctx2, url2, "", nil)
+
+	if err != nil {
+		logger.Error(err)
+		return nil, hiveError(err, l[0])
 	}
 
 	return res, nil
@@ -1196,6 +1199,7 @@ func (ipfs *Connector) FilesStat(st []string) (api.FilesStat, error) {
 
 	FilesStat := api.FilesStat{}
 	uid := st[0]
+
 	url := "files/stat?arg=" + filepath.Join("/nodes/", uid, st[1])
 	url = strings.ReplaceAll(url, "\\", "/")
 	if st[2] != "" {
@@ -1211,32 +1215,35 @@ func (ipfs *Connector) FilesStat(st []string) (api.FilesStat, error) {
 		url = url + "&with-local=" + st[5]
 	}
 
-	res, err := ipfs.postCtx(ctx, url, "", nil)
-	if err != nil {
-		logger.Error(err)
-		hash := uidkey[uid]
-		if hash != "" && st[5] == "" {
-			if !strings.HasPrefix(hash, "/ipfs/") {
-				hash = "/ipfs/" + hash
-			}
-
-			url = strings.ReplaceAll(url, "/nodes/" + uid, hash)
-
-			res, err = ipfs.postCtx(ctx, url, "", nil)
-			if err != nil {
-				logger.Error(err)
+	hash := uidkey[uid]
+	if hash != "" && st[5] == "" {
+		if !strings.HasPrefix(hash, "/ipfs/") {
+			hash = "/ipfs/" + hash
+		}
+		url2 := strings.ReplaceAll(url, "/nodes/" + uid, hash)
+		url2 = strings.ReplaceAll(url2, "\\", "/")
+		res, err := ipfs.postCtx(ctx, url2, "", nil)
+		if err == nil {
+			err = json.Unmarshal(res, &FilesStat)
+			if err == nil {
+				return FilesStat, err
 			}
 		}
-
 	}
 
-	err = json.Unmarshal(res, &FilesStat)
-	if err != nil {
-		logger.Error(err)
-		return FilesStat, err
+
+	ctx2, cancel2 := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
+	defer cancel2()
+
+	res2, err2 := ipfs.postCtx(ctx2, url, "", nil)
+	if err2 == nil {
+		err2 = json.Unmarshal(res2, &FilesStat)
+		if err2 == nil {
+			return FilesStat, err2
+		}
 	}
 
-	return FilesStat, nil
+	return FilesStat, err2
 }
 
 // write file
