@@ -27,10 +27,10 @@ puts "\ndeploy start ... "
 #expect "100%"
 #expect eof
 
-#set ipfs-cluseter-service "/home/jiawang/share/ipfs/src/Elastos.NET.Hive.Cluster/cmd/ipfs-cluster-service/ipfs-cluster-service"
-#spawn scp ${ipfs-cluseter-service} hive1:/hive/;
-#expect "100%"
-#expect eof
+set ipfs-cluseter-service "/hive/hive/Elastos.NET.Hive.Cluster/cmd/ipfs-cluster-service/ipfs-cluster-service"
+spawn scp ${ipfs-cluseter-service} hive1:/hive/;
+expect "100%"
+expect eof
 
 #spawn scp /home/jiawang/share/ipfs/bin/reset.sh hive1:/hive
 #expect "100%"

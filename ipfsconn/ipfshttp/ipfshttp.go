@@ -1215,7 +1215,7 @@ func (ipfs *Connector) FilesStat(st []string) (api.FilesStat, error) {
 	if err != nil {
 		logger.Error(err)
 		hash := uidkey[uid]
-		if hash != "" {
+		if hash != "" && st[5] == "" {
 			if !strings.HasPrefix(hash, "/ipfs/") {
 				hash = "/ipfs/" + hash
 			}

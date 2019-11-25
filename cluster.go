@@ -1890,7 +1890,7 @@ func (c *Cluster) FindQmHash(uid string) (api.UIDKey, error) {
 	uidkey.PeerID = c.id
 
 	//读取UID目录的Qm-hash
-	stat, err := c.ipfs.FilesStat([]string{uid, "", "", "", "", ""})
+	stat, err := c.ipfs.FilesStat([]string{uid, "", "", "", "", "true"})
 	if err != nil {
 		return uidkey, nil
 	}
@@ -1918,17 +1918,22 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 	logger.Info("Cur     UID: " + fmt.Sprintf("%s", lastUidkey.UID))
 	logger.Info("Cur  PeerID: " + fmt.Sprintf("%s", lastUidkey.PeerID) +" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
 
+    go copyLastQmhash(c, lastUidkey)
+
+	return lastUidkey, err
+}
+
+func copyLastQmhash(c *Cluster, lastUidkey api.UIDKey) error {
 	// Get newest QmHash
 	members, err := c.consensus.Peers(c.ctx)
 	if err != nil {
 		logger.Error(err)
 		logger.Error("an empty list of peers will be returned")
-		return lastUidkey, nil
+		return err
 	}
 
 	//lenMembers := len(members)
 	members, lenMembers := removeElement(members, c.id);
-
 	if lenMembers == 0 {
 		// 找到的就是自己
 		if lastUidkey.Root == "" && lastUidkey.UID != "" {
@@ -1936,7 +1941,7 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
 		}
 
-		return lastUidkey, nil
+		return nil
 	}
 
 	peersUID := make([]api.UIDKey, lenMembers, lenMembers)
@@ -1949,7 +1954,7 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 		members,
 		"Cluster",
 		"IPFSFindQmHash",
-		uid,
+		lastUidkey.UID,
 		rpcutil.CopyUIDQmHashStructToIfaces(peersUID),
 	)
 
@@ -1962,25 +1967,23 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 		if err == nil {
 			// check newest  key  比较这个文件最后的更新时间
 			if peersUID[i].Time > lastUidkey.Time {
-				lastUidkey.UID    = peersUID[i].UID
-				lastUidkey.Root   = peersUID[i].Root
-				lastUidkey.Time   = peersUID[i].Time
+				lastUidkey.UID = peersUID[i].UID
+				lastUidkey.Root = peersUID[i].Root
+				lastUidkey.Time = peersUID[i].Time
 				lastUidkey.PeerID = peersUID[i].PeerID
 			}
 
-			logger.Info("Find PeerID: " + fmt.Sprintf("%s", peersUID[i].PeerID)+" ,Root: " + peersUID[i].Root +" ,Time: " + fmt.Sprintf("%s", peersUID[i].Time))
+			logger.Info("Find PeerID: " + fmt.Sprintf("%s", peersUID[i].PeerID) + " ,Root: " + peersUID[i].Root + " ,Time: " + fmt.Sprintf("%s", peersUID[i].Time))
 		}
 	}
 
-
-	if lastUidkey.UID != "" &&  lastUidkey.Root == "" {
-		err := c.ipfs.FilesMkdir([]string{uid, "", "true"})
+	if lastUidkey.UID != "" && lastUidkey.Root == "" {
+		err := c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
 		if err != nil {
 			logger.Error(err)
 		}
-		return lastUidkey, err
+		return err
 	}
-
 
 	hash := lastUidkey.Root
 
@@ -1988,8 +1991,7 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 		hash = "/ipfs/" + hash
 	}
 
-	c.ipfs.SaveUID(uid, hash)
-
+	c.ipfs.SaveUID(lastUidkey.UID, hash)
 
 	if lastUidkey.PeerID != c.id {
 		if lastUidkey.Root != "" && lastUidkey.UID != "" {
@@ -2002,12 +2004,14 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 				if err != nil {
 					logger.Error(err)
 				}
+				return err;
 			}
 		}
 	}
 
-	return lastUidkey, err
+	return nil;
 }
+
 
 func removeElement(nums []peer.ID, val peer.ID) ([]peer.ID, int) {
 	//如果是空切片，那就返回0
