@@ -1071,12 +1071,40 @@ func (ipfs *Connector) FilesFlush(l []string) error {
 }
 
 // list file or directory
+//curl "http://localhost:5001/api/v0/files/ls?arg=<path>&l=<value>&U=<value>"
+//curl "http://localhost:5001/api/v0/file/ls?arg=<ipfs-path>"
+//https://docs.ipfs.io/reference/api/http/#api-v0-file-ls
 func (ipfs *Connector) FilesLs(l []string) (api.FilesLs, error) {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	url := "files/ls?arg=" + filepath.Join("/nodes/", l[0], l[1])
-	url = strings.ReplaceAll(url, "\\", "/")
+	uid := l[0]
+
 	lsrsp := api.FilesLs{}
+
+	hash := uidkey[uid]
+
+	if hash != "" {
+		//var dat map[string]interface{}
+		if !strings.HasPrefix(hash, "/ipfs/") {
+			hash = "/ipfs/" + hash
+		}
+
+		url := "file/ls?arg=" + filepath.Join(hash, l[1])
+		url = strings.ReplaceAll(url, "\\", "/")
+
+		res, err := ipfs.postCtx(ctx, url, "", nil)
+		if err == nil {
+			logger.Error(string(res))
+			//err = json.Unmarshal(res, &dat)
+			//if err == nil {
+			//	return lsrsp, err
+			//}
+		}
+	}
+
+	url := "files/ls?arg=" + filepath.Join("/nodes/", uid, l[1])
+	url = strings.ReplaceAll(url, "\\", "/")
+
 
 	res, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
@@ -1127,7 +1155,7 @@ func (ipfs *Connector) FilesMv(mv []string) error {
 func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
-	uid := l[0];
+	uid := l[0]
 
 	hash := uidkey[uid]
 	uselocal := false
@@ -1171,11 +1199,35 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 }
 
 // remove file
+//curl "http://localhost:5001/api/v0/files/rm?arg=<path>&recursive=<value>&force=<value>"
+//curl "http://localhost:5001/api/v0/pin/rm?arg=<ipfs-path>&recursive=true"
 func (ipfs *Connector) FilesRm(l []string) error {
 	ctx, cancel := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel()
+	uid := l[0]
 
-	url := "files/rm?arg=" + filepath.Join("/nodes/", l[0], l[1])
+	hash := uidkey[uid]
+
+	if hash != "" {
+		if !strings.HasPrefix(hash, "/ipfs/") {
+			hash = "/ipfs/" + hash
+		}
+
+		url := "pin/rm?arg=" + filepath.Join(hash, l[1])
+		url = strings.ReplaceAll(url, "\\", "/")
+		if len(l) >= 3 && l[2] != "" {
+			url = url + "&recursive=" + l[2]
+		}
+		if len(l) >= 4 &&  l[3] != "" {
+			url = url + "&force=" + l[3]
+		}
+		_, err := ipfs.postCtx(ctx, url, "", nil)
+		if err == nil {
+			return  nil
+		}
+	}
+
+	url := "files/rm?arg=" + filepath.Join("/nodes/", uid, l[1])
 
 	if len(l) >= 3 && l[2] != "" {
 		url = url + "&recursive=" + l[2]

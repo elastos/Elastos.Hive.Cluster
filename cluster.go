@@ -1918,7 +1918,15 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 	logger.Info("Cur     UID: " + fmt.Sprintf("%s", lastUidkey.UID))
 	logger.Info("Cur  PeerID: " + fmt.Sprintf("%s", lastUidkey.PeerID) +" ,Root: " + lastUidkey.Root +" ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
 
-    go copyLastQmhash(c, lastUidkey)
+	//make sure create home direcory
+	if lastUidkey.UID != "" && lastUidkey.Root == "" {
+		err := c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
+		if err != nil {
+			logger.Error(err)
+		}
+	}
+
+	findLastQmhash(c, lastUidkey)
 
 	if lastUidkey.Root != "" {
 		if !strings.HasPrefix(lastUidkey.Root, "/ipfs/") {
@@ -1930,7 +1938,7 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 	return lastUidkey, err
 }
 
-func copyLastQmhash(c *Cluster, lastUidkey api.UIDKey) error {
+func findLastQmhash(c *Cluster, lastUidkey api.UIDKey) error {
 	// Get newest QmHash
 	members, err := c.consensus.Peers(c.ctx)
 	if err != nil {
@@ -1943,11 +1951,6 @@ func copyLastQmhash(c *Cluster, lastUidkey api.UIDKey) error {
 	members, lenMembers := removeElement(members, c.id);
 	if lenMembers == 0 {
 		// 找到的就是自己
-		if lastUidkey.Root == "" && lastUidkey.UID != "" {
-			//没有UID目录，确保登录成功后有一个存在的UID目录
-			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
-		}
-
 		return nil
 	}
 
@@ -1984,39 +1987,9 @@ func copyLastQmhash(c *Cluster, lastUidkey api.UIDKey) error {
 		}
 	}
 
-	if lastUidkey.UID != "" && lastUidkey.Root == "" {
-		err := c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
-		if err != nil {
-			logger.Error(err)
-		}
-		return err
-	}
-	hash := lastUidkey.Root
-
-	if lastUidkey.Root != "" {
-		if !strings.HasPrefix(hash, "/ipfs/") {
-			hash = "/ipfs/" + hash
-		}
-
-		c.ipfs.SaveUID(lastUidkey.UID, hash)
-    }
-
 	if lastUidkey.PeerID != c.id {
 		if lastUidkey.Root != "" && lastUidkey.UID != "" {
-			c.ipfs.FilesRm([]string{lastUidkey.UID, "", "true", "true"})
 			logger.Info("Last peeUID: " + fmt.Sprintf("%s", lastUidkey.PeerID) + " ,Root: " + lastUidkey.Root + " ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
-			if !strings.HasPrefix(hash, "/ipfs/") {
-				hash = "/ipfs/" + hash
-			}
-			err = c.ipfs.FilesCp([]string{lastUidkey.UID, hash, ""})
-			if err != nil {
-				logger.Error(err)
-				err := c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
-				if err != nil {
-					logger.Error(err)
-				}
-				return err;
-			}
 		}
 	}
 
