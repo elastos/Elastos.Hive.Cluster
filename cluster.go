@@ -1926,32 +1926,32 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 		}
 	}
 
-	findLastQmhash(c, lastUidkey)
+	lastNewUidkey, _ := findLastQmhash(c, lastUidkey)
 
-	if lastUidkey.Root != "" {
-		if !strings.HasPrefix(lastUidkey.Root, "/ipfs/") {
-			lastUidkey.Root = "/ipfs/" + lastUidkey.Root
+	if lastNewUidkey.Root != "" {
+		if !strings.HasPrefix(lastNewUidkey.Root, "/ipfs/") {
+			lastNewUidkey.Root = "/ipfs/" + lastNewUidkey.Root
 		}
 
-		c.ipfs.SaveUID(lastUidkey.UID, lastUidkey.Root)
+		c.ipfs.SaveUID(lastNewUidkey.UID, lastNewUidkey.Root)
 	}
-	return lastUidkey, err
+	return lastNewUidkey, err
 }
 
-func findLastQmhash(c *Cluster, lastUidkey api.UIDKey) error {
+func findLastQmhash(c *Cluster, lastUidkey api.UIDKey) (api.UIDKey, error) {
 	// Get newest QmHash
 	members, err := c.consensus.Peers(c.ctx)
 	if err != nil {
 		logger.Error(err)
 		logger.Error("an empty list of peers will be returned")
-		return err
+		return lastUidkey, err
 	}
 
 	//lenMembers := len(members)
 	members, lenMembers := removeElement(members, c.id);
 	if lenMembers == 0 {
 		// 找到的就是自己
-		return nil
+		return lastUidkey, nil
 	}
 
 	peersUID := make([]api.UIDKey, lenMembers, lenMembers)
@@ -1993,7 +1993,7 @@ func findLastQmhash(c *Cluster, lastUidkey api.UIDKey) error {
 		}
 	}
 
-	return nil;
+	return lastUidkey, nil;
 }
 
 

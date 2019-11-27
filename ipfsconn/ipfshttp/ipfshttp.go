@@ -1084,11 +1084,11 @@ func (ipfs *Connector) FilesLs(l []string) (api.FilesLs, error) {
 	hash := uidkey[uid]
 
 	if hash != "" {
-		//var dat map[string]interface{}
+
 		if !strings.HasPrefix(hash, "/ipfs/") {
 			hash = "/ipfs/" + hash
 		}
-
+		logger.Info("FilesLs HASH: " + fmt.Sprintf("%s", hash))
 		url := "file/ls?arg=" + filepath.Join(hash, l[1])
 		url = strings.ReplaceAll(url, "\\", "/")
 
@@ -1167,7 +1167,7 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 		if !strings.HasPrefix(hash, "/ipfs/") {
 			hash = "/ipfs/" + hash
 		}
-
+		logger.Info("FilesRead HASH: " + fmt.Sprintf("%s", hash))
 		url := "cat?arg=" + filepath.Join(hash, l[1])
 		url = strings.ReplaceAll(url, "\\", "/")
 		if l[2] != "" {
@@ -1212,7 +1212,7 @@ func (ipfs *Connector) FilesRm(l []string) error {
 		if !strings.HasPrefix(hash, "/ipfs/") {
 			hash = "/ipfs/" + hash
 		}
-
+		logger.Info("FilesRm HASH: " + fmt.Sprintf("%s", hash))
 		url := "pin/rm?arg=" + filepath.Join(hash, l[1])
 		url = strings.ReplaceAll(url, "\\", "/")
 		if len(l) >= 3 && l[2] != "" {
@@ -1275,6 +1275,7 @@ func (ipfs *Connector) FilesStat(st []string) (api.FilesStat, error) {
 		if !strings.HasPrefix(hash, "/ipfs/") {
 			hash = "/ipfs/" + hash
 		}
+		logger.Info("FilesStat HASH: " + fmt.Sprintf("%s", hash))
 		url2 := strings.ReplaceAll(url, "/nodes/" + uid, hash)
 		url2 = strings.ReplaceAll(url2, "\\", "/")
 		res, err := ipfs.postCtx(ctx, url2, "", nil)

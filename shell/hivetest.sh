@@ -4,7 +4,7 @@
 HIVE1=149.28.250.203
 HIVE2=207.148.74.62
 HIVE3=149.248.34.180
-#HIVE4=10.10.156.160
+HIVE4=107.191.44.124
 
 #HIVE5=52.83.159.189
 
@@ -87,7 +87,7 @@ do
 
         show_steps "Now Generate UID"
         if [ "${HIVE_UID}" = "" ]; then
-            HIVE_UID=`curl http://${SERVER1}:9095/api/v0/uid/new?uid=uid3 | jq -r ".UID"` || show_error "UID cannot be created."
+            HIVE_UID=`curl http://${SERVER1}:9095/api/v0/uid/new?uid=uid1127 | jq -r ".UID"` || show_error "UID cannot be created."
             echo "Your new UID is ${HIVE_UID}."
         else
             echo "You use FIXED UID ${HIVE_UID}."
@@ -115,9 +115,9 @@ do
         time_end_login_server2=`date +%s.%N`
         logs_time Login_${SERVER2} $time_start_login_server2 $time_end_login_server2
         logs "[Info] Login ${SERVER2} successfully"
-            
-       # show_steps "Now sleep for 10 seconds"
-       # sleep 10
+
+       show_steps "Now sleep for 10 seconds"
+       sleep 10
 
         for((t=0;t<120;t=$t+1))
         do
