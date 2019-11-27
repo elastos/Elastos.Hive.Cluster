@@ -942,3 +942,21 @@ type FilesWrite struct {
 	Params      []string
 }
 
+type LsLink struct {
+	Name, Hash string
+	Size       uint64
+	Type       string
+}
+
+type LsObject struct {
+	Hash  string
+	Size  uint64
+	Type  string
+	Links []LsLink
+}
+
+type LsOutput struct {
+	Arguments map[string]string
+	Objects   map[string]*LsObject
+}
+

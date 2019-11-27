@@ -1091,14 +1091,27 @@ func (ipfs *Connector) FilesLs(l []string) (api.FilesLs, error) {
 		logger.Info("FilesLs HASH: " + fmt.Sprintf("%s", hash))
 		url := "file/ls?arg=" + filepath.Join(hash, l[1])
 		url = strings.ReplaceAll(url, "\\", "/")
-
+		output := api.LsOutput{}
 		res, err := ipfs.postCtx(ctx, url, "", nil)
 		if err == nil {
-			logger.Error(string(res))
-			//err = json.Unmarshal(res, &dat)
-			//if err == nil {
-			//	return lsrsp, err
-			//}
+
+			err = json.Unmarshal(res, &output)
+			if err == nil {
+				prehash := strings.ReplaceAll(hash, "/ipfs/", "")
+				length := len(output.Objects[prehash].Links)
+				fileLsEntrie := make([]api.FileLsEntrie, length, length)
+				for i := 0; i < length; i++ {
+					link := output.Objects[prehash].Links[i]
+					fileLsEntrie[i] = api.FileLsEntrie{
+						Name: link.Name,
+						Type: 0,
+						Size: 0,
+						Hash: "",
+					}
+				}
+				lsrsp.Entries = fileLsEntrie
+				return lsrsp, err
+			}
 		}
 	}
 
