@@ -1097,7 +1097,9 @@ func (ipfs *Connector) FilesLs(l []string) (api.FilesLs, error) {
 			logger.Info("FilesLs HASH:  result" + string(res))
 			err = json.Unmarshal(res, &output)
 			if err == nil  {
-				prehash := strings.ReplaceAll(hash, "/ipfs/", "")
+				path := filepath.Join(hash, l[1])
+				path = strings.ReplaceAll(path, "\\", "/")
+				prehash := output.Arguments[path]
 				if output.Objects[prehash] != nil && output.Objects[prehash].Links != nil {
 					length := len(output.Objects[prehash].Links)
 					fileLsEntrie := make([]api.FileLsEntrie, length, length)
