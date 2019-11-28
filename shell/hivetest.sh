@@ -6,20 +6,20 @@ HIVE2=207.148.74.62
 HIVE3=149.248.34.180
 HIVE4=107.191.44.124
 
-#HIVE5=52.83.159.189
 
+#  elastos@HIVE
 eval SERVER1="$"HIVE$1""
 eval SERVER2="$"HIVE$2""
 
 server1=$1
 server2=$2
 
-TEST_SIZE=(4k 64k 512k 1M 2M 5M 10M) # Also as filename
+TEST_SIZE=(4k 6k 8k 10k 12k 15k 20k) # Also as filename
 
 
 # Uncomment it to use the fixed UID
-# HIVE_UID=uid-e47d0e5c-853b-45a6-a5b0-286c5fd680fd
-# HIVE_UID="uid-jw"
+HIVE_UID_ORI=uid-e47d0e5c-853b-45a6-a5b0-286c5fd680fd
+
 
 function show_error()
 {
@@ -27,7 +27,7 @@ function show_error()
     echo "************************************************************"
     echo $1
     echo "************************************************************"
-    rm 4k 64k 512k 1M 2M 5M 10M -f
+    rm 4k 6k 8k 10k 12k 15k 20k -f
     rm download_* -f
     rm stat_* -f
     continue
@@ -87,7 +87,7 @@ do
 
         show_steps "Now Generate UID"
         if [ "${HIVE_UID}" = "" ]; then
-            HIVE_UID=`curl http://${SERVER1}:9095/api/v0/uid/new?uid=uid1127 | jq -r ".UID"` || show_error "UID cannot be created."
+            HIVE_UID=`curl http://${SERVER1}:9095/api/v0/uid/new?uid=${HIVE_UID_ORI} | jq -r ".UID"` || show_error "UID cannot be created."
             echo "Your new UID is ${HIVE_UID}."
         else
             echo "You use FIXED UID ${HIVE_UID}."
@@ -168,7 +168,7 @@ do
         echo "*******************************************************************************************************" | tee -a $logfile $statisticsfile
         echo " " | tee -a $logfile $statisticsfile
         echo " " | tee -a $logfile $statisticsfile
-        rm 4k 64k 512k 1M 2M 5M 10M -f
+        rm 4k 6k 8k 10k 12k 15k 20k -f
         rm download_* -f
         rm stat_* -f
 done

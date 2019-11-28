@@ -1084,33 +1084,35 @@ func (ipfs *Connector) FilesLs(l []string) (api.FilesLs, error) {
 	hash := uidkey[uid]
 
 	if hash != "" {
-
 		if !strings.HasPrefix(hash, "/ipfs/") {
 			hash = "/ipfs/" + hash
 		}
-		logger.Info("FilesLs HASH: " + fmt.Sprintf("%s", hash))
 		url := "file/ls?arg=" + filepath.Join(hash, l[1])
 		url = strings.ReplaceAll(url, "\\", "/")
+		logger.Info("FilesLs HASH: " + fmt.Sprintf("%s", url))
+
 		output := api.LsOutput{}
 		res, err := ipfs.postCtx(ctx, url, "", nil)
 		if err == nil {
-
+			logger.Info("FilesLs HASH:  result" + string(res))
 			err = json.Unmarshal(res, &output)
-			if err == nil {
+			if err == nil  {
 				prehash := strings.ReplaceAll(hash, "/ipfs/", "")
-				length := len(output.Objects[prehash].Links)
-				fileLsEntrie := make([]api.FileLsEntrie, length, length)
-				for i := 0; i < length; i++ {
-					link := output.Objects[prehash].Links[i]
-					fileLsEntrie[i] = api.FileLsEntrie{
-						Name: link.Name,
-						Type: 0,
-						Size: 0,
-						Hash: "",
+				if output.Objects[prehash] != nil && output.Objects[prehash].Links != nil {
+					length := len(output.Objects[prehash].Links)
+					fileLsEntrie := make([]api.FileLsEntrie, length, length)
+					for i := 0; i < length; i++ {
+						link := output.Objects[prehash].Links[i]
+						fileLsEntrie[i] = api.FileLsEntrie{
+								Name: link.Name,
+								Type: 0,
+								Size: 0,
+								Hash: "",
+						}
 					}
+					lsrsp.Entries = fileLsEntrie
+					return lsrsp, err
 				}
-				lsrsp.Entries = fileLsEntrie
-				return lsrsp, err
 			}
 		}
 	}
@@ -1180,7 +1182,7 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 		if !strings.HasPrefix(hash, "/ipfs/") {
 			hash = "/ipfs/" + hash
 		}
-		logger.Info("FilesRead HASH: " + fmt.Sprintf("%s", hash))
+
 		url := "cat?arg=" + filepath.Join(hash, l[1])
 		url = strings.ReplaceAll(url, "\\", "/")
 		if l[2] != "" {
@@ -1190,6 +1192,7 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 			url = url + "&length=" + l[3]
 		}
 
+		logger.Info("FilesRead HASH: " + fmt.Sprintf("%s", url))
 		res, err := ipfs.postCtx(ctx, url, "", nil)
 		if err == nil {
 			return res, nil
@@ -1225,7 +1228,7 @@ func (ipfs *Connector) FilesRm(l []string) error {
 		if !strings.HasPrefix(hash, "/ipfs/") {
 			hash = "/ipfs/" + hash
 		}
-		logger.Info("FilesRm HASH: " + fmt.Sprintf("%s", hash))
+
 		url := "pin/rm?arg=" + filepath.Join(hash, l[1])
 		url = strings.ReplaceAll(url, "\\", "/")
 		if len(l) >= 3 && l[2] != "" {
@@ -1234,7 +1237,7 @@ func (ipfs *Connector) FilesRm(l []string) error {
 		if len(l) >= 4 &&  l[3] != "" {
 			url = url + "&force=" + l[3]
 		}
-
+		logger.Info("FilesRm HASH: " + fmt.Sprintf("%s", url))
 		ipfs.postCtx(ctx, url, "", nil)
 	}
 
@@ -1286,9 +1289,11 @@ func (ipfs *Connector) FilesStat(st []string) (api.FilesStat, error) {
 		if !strings.HasPrefix(hash, "/ipfs/") {
 			hash = "/ipfs/" + hash
 		}
-		logger.Info("FilesStat HASH: " + fmt.Sprintf("%s", hash))
+
 		url2 := strings.ReplaceAll(url, "/nodes/" + uid, hash)
 		url2 = strings.ReplaceAll(url2, "\\", "/")
+
+		logger.Info("FilesStat HASH: " + fmt.Sprintf("%s", url2))
 		res, err := ipfs.postCtx(ctx, url2, "", nil)
 		if err == nil {
 			err = json.Unmarshal(res, &FilesStat)
