@@ -1234,10 +1234,8 @@ func (ipfs *Connector) FilesRm(l []string) error {
 		if len(l) >= 4 &&  l[3] != "" {
 			url = url + "&force=" + l[3]
 		}
-		_, err := ipfs.postCtx(ctx, url, "", nil)
-		if err == nil {
-			return  nil
-		}
+
+		ipfs.postCtx(ctx, url, "", nil)
 	}
 
 	url := "files/rm?arg=" + filepath.Join("/nodes/", uid, l[1])

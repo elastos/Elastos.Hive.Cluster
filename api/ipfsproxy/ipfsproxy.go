@@ -1355,6 +1355,7 @@ func (proxy *Server) uidSpawn(uid string) error {
 	if err != nil {
 		return err
 	}
+
     var time = fmt.Sprintf("%v", time.Now().Unix())
 	fileWriter.Write([]byte(time))
 
@@ -1374,9 +1375,10 @@ func (proxy *Server) uidSpawn(uid string) error {
 		FilesWrite,
 		&struct{}{},
 	)
-	if err != nil {
+
+	if err == nil {
 		return err
 	}
 
-	return err
+	return nil
 }
