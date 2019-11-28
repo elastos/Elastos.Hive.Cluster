@@ -1113,7 +1113,7 @@ func (ipfs *Connector) FilesLs(l []string) (api.FilesLs, error) {
 						}
 					}
 					lsrsp.Entries = fileLsEntrie
-					return lsrsp, err
+					return lsrsp, nil
 				}
 			}
 		}
@@ -1126,13 +1126,13 @@ func (ipfs *Connector) FilesLs(l []string) (api.FilesLs, error) {
 	res, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
-		return lsrsp, hiveError(err, l[0])
+		return lsrsp, nil
 	}
 
 	err = json.Unmarshal(res, &lsrsp)
 	if err != nil {
 		logger.Error(err)
-		return lsrsp, err
+		return lsrsp, nil
 	}
 
 	return lsrsp, nil
@@ -1253,11 +1253,11 @@ func (ipfs *Connector) FilesRm(l []string) error {
 	}
 
 	url = strings.ReplaceAll(url, "\\", "/")
-
+	logger.Info("FilesRm : " + fmt.Sprintf("%s", url))
 	_, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
-		return hiveError(err, l[0])
+		return nil
 	}
 
 	return nil
@@ -1350,7 +1350,7 @@ func (ipfs *Connector) FilesWrite(fr api.FilesWrite) error {
 	if fr.Params[8] != "" {
 		url = url + "&hash=" + fr.Params[8]
 	}
-
+	logger.Info("FilesWrite HASH: " + fmt.Sprintf("%s", url))
 	_, err := ipfs.postCtx(ctx, url, fr.ContentType, fr.BodyBuf)
 	if err != nil {
 		logger.Error(err)

@@ -927,12 +927,6 @@ func (proxy *Server) filesCpHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := proxy.uidSpawn(uid)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
-		return
-	}
-
 	source := q.Get("source")
 	if source == "" {
 		ipfsErrorResponder(w, "error reading request: "+r.URL.String(), -1)
@@ -945,13 +939,19 @@ func (proxy *Server) filesCpHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = proxy.rpcClient.Call(
+	err := proxy.rpcClient.Call(
 		"",
 		"Cluster",
 		"IPFSFilesCp",
 		[]string{uid, source, dest},
 		&struct{}{},
 	)
+	if err != nil {
+		ipfsErrorResponder(w, err.Error(), -1)
+		return
+	}
+
+	err = proxy.uidSpawn(uid)
 	if err != nil {
 		ipfsErrorResponder(w, err.Error(), -1)
 		return
@@ -972,24 +972,24 @@ func (proxy *Server) filesFlushHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := proxy.uidSpawn(uid)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
-		return
-	}
-
 	path := q.Get("path")
 	if path == "" {
 		path = "/"
 	}
 
-	err = proxy.rpcClient.Call(
+	err := proxy.rpcClient.Call(
 		"",
 		"Cluster",
 		"IPFSFilesFlush",
 		[]string{uid, path},
 		&struct{}{},
 	)
+	if err != nil {
+		ipfsErrorResponder(w, err.Error(), -1)
+		return
+	}
+
+	err = proxy.uidSpawn(uid)
 	if err != nil {
 		ipfsErrorResponder(w, err.Error(), -1)
 		return
@@ -1051,15 +1051,6 @@ func (proxy *Server) filesMkdirHandler(w http.ResponseWriter, r *http.Request) {
 		path = "/"
 	}
 
-	// the root directoty no set time
-	if path != "/" {
-		err2 := proxy.uidSpawn(uid)
-		if err2 != nil {
-			ipfsErrorResponder(w, err2.Error(), -1)
-			return
-		}
-	}
-
 	parents := q.Get("parents")
 	if parents == "" {
 		parents = "false"
@@ -1077,6 +1068,15 @@ func (proxy *Server) filesMkdirHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// the root directoty no set time
+	if path != "/" {
+		err2 := proxy.uidSpawn(uid)
+		if err2 != nil {
+			ipfsErrorResponder(w, err2.Error(), -1)
+			return
+		}
+	}
+
 	w.WriteHeader(http.StatusOK)
 	return
 }
@@ -1092,12 +1092,6 @@ func (proxy *Server) filesMvHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := proxy.uidSpawn(uid)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
-		return
-	}
-
 	source := q.Get("source")
 	if source == "" {
 		source = "/"
@@ -1108,13 +1102,19 @@ func (proxy *Server) filesMvHandler(w http.ResponseWriter, r *http.Request) {
 		dest = "/"
 	}
 
-	err = proxy.rpcClient.Call(
+	err := proxy.rpcClient.Call(
 		"",
 		"Cluster",
 		"IPFSFilesMv",
 		[]string{uid, source, dest},
 		&struct{}{},
 	)
+	if err != nil {
+		ipfsErrorResponder(w, err.Error(), -1)
+		return
+	}
+
+	err = proxy.uidSpawn(uid)
 	if err != nil {
 		ipfsErrorResponder(w, err.Error(), -1)
 		return
@@ -1174,12 +1174,6 @@ func (proxy *Server) filesRmHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := proxy.uidSpawn(uid)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
-		return
-	}
-
 	path := q.Get("path")
 	if path == "" {
 		ipfsErrorResponder(w, "error reading request: "+r.URL.String(), -1)
@@ -1195,13 +1189,19 @@ func (proxy *Server) filesRmHandler(w http.ResponseWriter, r *http.Request) {
 		recursive = "false"
 	}
 
-	err = proxy.rpcClient.Call(
+	err := proxy.rpcClient.Call(
 		"",
 		"Cluster",
 		"IPFSFilesRm",
 		[]string{uid, path, recursive},
 		&struct{}{},
 	)
+	if err != nil {
+		ipfsErrorResponder(w, err.Error(), -1)
+		return
+	}
+
+	err = proxy.uidSpawn(uid)
 	if err != nil {
 		ipfsErrorResponder(w, err.Error(), -1)
 		return
@@ -1264,12 +1264,6 @@ func (proxy *Server) filesWriteHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err := proxy.uidSpawn(uid)
-	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
-		return
-	}
-
 	path := q.Get("path")
 	if path == "" {
 		ipfsErrorResponder(w, "error reading request: "+r.URL.String(), -1)
@@ -1317,6 +1311,7 @@ func (proxy *Server) filesWriteHandler(w http.ResponseWriter, r *http.Request) {
 	contentType := writer.FormDataContentType()
 	writer.Close()
 
+
 	FilesWrite := api.FilesWrite{
 		ContentType: contentType,
 		BodyBuf:     bodyBuf,
@@ -1329,6 +1324,12 @@ func (proxy *Server) filesWriteHandler(w http.ResponseWriter, r *http.Request) {
 		FilesWrite,
 		&struct{}{},
 	)
+	if err != nil {
+		ipfsErrorResponder(w, err.Error(), -1)
+		return
+	}
+
+	err = proxy.uidSpawn(uid)
 	if err != nil {
 		ipfsErrorResponder(w, err.Error(), -1)
 		return
@@ -1376,9 +1377,5 @@ func (proxy *Server) uidSpawn(uid string) error {
 		&struct{}{},
 	)
 
-	if err == nil {
-		return err
-	}
-
-	return nil
+	return err
 }
