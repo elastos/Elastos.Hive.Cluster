@@ -1239,6 +1239,7 @@ func (ipfs *Connector) FilesRm(l []string) error {
 		if len(l) >= 4 &&  l[3] != "" {
 			url = url + "&force=" + l[3]
 		}
+        //TODO  notify Peeid Datachanged
 		logger.Info("FilesRm HASH: " + fmt.Sprintf("%s", url))
 		ipfs.postCtx(ctx, url, "", nil)
 	}
