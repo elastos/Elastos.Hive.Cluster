@@ -1203,6 +1203,12 @@ func (ipfs *Connector) FilesRead(l []string) ([]byte, error) {
 
 	url2 := "files/read?arg=" + filepath.Join("/nodes/", uid, l[1])
 	url2 = strings.ReplaceAll(url2, "\\", "/")
+	if l[2] != "" {
+		url2 = url2 + "&offset=" + l[2]
+	}
+	if l[3] != "" {
+		url2 = url2 + "&length=" + l[3]
+	}
 	ctx2, cancel2 := context.WithTimeout(ipfs.ctx, ipfs.config.IPFSRequestTimeout)
 	defer cancel2()
 
