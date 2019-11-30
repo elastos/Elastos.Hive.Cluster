@@ -1126,13 +1126,13 @@ func (ipfs *Connector) FilesLs(l []string) (api.FilesLs, error) {
 	res, err := ipfs.postCtx(ctx, url, "", nil)
 	if err != nil {
 		logger.Error(err)
-		return lsrsp, nil
+		return lsrsp, err
 	}
 
 	err = json.Unmarshal(res, &lsrsp)
 	if err != nil {
 		logger.Error(err)
-		return lsrsp, nil
+		return lsrsp, err
 	}
 
 	return lsrsp, nil
