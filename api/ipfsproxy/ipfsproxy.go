@@ -1008,7 +1008,7 @@ func (proxy *Server) filesLsHandler(w http.ResponseWriter, r *http.Request) {
 
 	uid := q.Get("uid")
 	if uid == "" {
-		ipfsErrorResponder(w, "error file does not exist: "+r.URL.String(), 404)
+		ipfsErrorResponder(w, "error reading request: "+r.URL.String(), -1)
 		return
 	}
 
@@ -1025,7 +1025,7 @@ func (proxy *Server) filesLsHandler(w http.ResponseWriter, r *http.Request) {
 		&FilesLs,
 	)
 	if err != nil {
-		ipfsErrorResponder(w, err.Error(), -1)
+		ipfsErrorResponder(w, "error file does not exist: " + r.URL.String(), 404)
 		return
 	}
 
