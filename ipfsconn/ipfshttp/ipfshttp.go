@@ -1108,12 +1108,14 @@ func (ipfs *Connector) FilesLs(l []string) (api.FilesLs, error) {
 						fileLsEntrie[i] = api.FileLsEntrie{
 								Name: link.Name,
 								Type: 0,
-								Size: 0,
-								Hash: "",
+								Size: link.Size,
+								Hash: link.Hash,
 						}
 					}
 					lsrsp.Entries = fileLsEntrie
-					return lsrsp, nil
+					if length > 1 || (length == 1 && output.Objects[prehash].Links[0].Name != "time.txt") {
+						return lsrsp, nil
+					}
 				}
 			}
 		}

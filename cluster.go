@@ -1935,6 +1935,14 @@ func (c *Cluster) AutoLogin(uid string) (api.UIDKey, error) {
 
 		c.ipfs.SaveUID(lastNewUidkey.UID, lastNewUidkey.Root)
 	}
+
+	if lastUidkey.PeerID != c.id {
+		if lastUidkey.Root != "" && lastUidkey.UID != "" {
+			c.ipfs.FilesRm([]string{lastUidkey.UID, "", "true", "true"})
+			c.ipfs.FilesMkdir([]string{lastUidkey.UID, "", "true"})
+			logger.Info("Last peeUID: " + fmt.Sprintf("%s", lastUidkey.PeerID) + " ,Root: " + lastUidkey.Root + " ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
+		}
+	}
 	return lastNewUidkey, err
 }
 
@@ -1984,12 +1992,6 @@ func findLastQmhash(c *Cluster, lastUidkey api.UIDKey) (api.UIDKey, error) {
 			}
 
 			logger.Info("Find PeerID: " + fmt.Sprintf("%s", peersUID[i].PeerID) + " ,Root: " + peersUID[i].Root + " ,Time: " + fmt.Sprintf("%s", peersUID[i].Time))
-		}
-	}
-
-	if lastUidkey.PeerID != c.id {
-		if lastUidkey.Root != "" && lastUidkey.UID != "" {
-			logger.Info("Last peeUID: " + fmt.Sprintf("%s", lastUidkey.PeerID) + " ,Root: " + lastUidkey.Root + " ,Time: " + fmt.Sprintf("%s", lastUidkey.Time))
 		}
 	}
 
